@@ -1,0 +1,293 @@
+---
+title: Gateway Commands
+description: Start, stop, and manage NeuraTrade gateway services
+---
+
+The `gateway` command manages the lifecycle of all NeuraTrade services (Backend API, CCXT Service, Telegram Service).
+
+## Start Services
+
+Start all NeuraTrade services:
+
+```bash
+./bin/neuratrade gateway start
+```
+
+### Example Output
+
+```terminal
+🚀 Starting NeuraTrade Gateway...
+
+📁 NeuraTrade Home: /home/user/.neuratrade
+⚙️  Config File: /home/user/.neuratrade/config.json
+🌐 Backend Port: 8080 (public)
+🔌 CCXT Port: 3001 (internal, bound to 127.0.0.1)
+📞 Telegram Port: 3002 (internal, bound to 127.0.0.1)
+🛡️  Supervised Mode: false
+⏱️  Health Timeout: 90s
+
+📊 Starting CCXT Service...
+✅ CCXT Service started
+🔧 Starting Backend API...
+✅ Backend API started
+📞 Starting Telegram Service...
+✅ Telegram Service started
+
+🎉 All services started successfully!
+
+📡 Backend API: http://localhost:8080
+🏥 Health Check: http://localhost:8080/health
+
+Press Ctrl+C to stop all services
+```
+
+### Flags
+
+#### `--supervised`
+
+Enable supervised mode to keep the gateway running even if health checks fail during startup:
+
+```bash
+./bin/neuratrade gateway start --supervised
+```
+
+<Note>
+**Supervised Mode** allows services to warm up gradually. The gateway will start services and continue running even if initial health probes fail, giving backend and Telegram services time to initialize.
+
+Set via flag or environment variable:
+```bash
+export NEURATRADE_GATEWAY_SUPERVISED=true
+```
+</Note>
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `SERVER_PORT` | Backend API port | `8080` |
+| `CCXT_PORT` | CCXT service port | `3001` |
+| `TELEGRAM_PORT` | Telegram service port | `3002` |
+| `BIND_HOST` | Service bind address | `127.0.0.1` |
+| `NEURATRADE_GATEWAY_SUPERVISED` | Enable supervised mode | `false` |
+| `NEURATRADE_GATEWAY_HEALTH_TIMEOUT_SECONDS` | Health check timeout | `90` |
+| `ADMIN_API_KEY` | Admin API key (auto-generated if missing) | - |
+| `JWT_SECRET` | JWT signing secret (auto-generated if missing) | - |
+| `SQLITE_PATH` | SQLite database path | `~/.neuratrade/data/neuratrade.db` |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token | From config |
+| `AI_API_KEY` | AI provider API key | From config |
+
+### Service Startup Order
+
+1. **CCXT Service** - Exchange data bridge
+2. **Backend API** - Core API server (waits for health check)
+3. **Telegram Service** - Bot interface (waits for health check)
+
+### Health Monitoring
+
+The gateway continuously monitors service health every 15 seconds and updates the runtime state:
+
+- **healthy** - All services running and responding to health checks
+- **warming** - Services started but health checks not yet passing
+- **degraded** - Some services unhealthy
+- **down** - All services stopped
+
+<Warning>
+**Security Note:** The backend binds to `0.0.0.0` (all interfaces) to accept external connections, while CCXT and Telegram services bind to `127.0.0.1` (localhost only) for internal communication.
+
+Ensure firewall rules protect the backend port in production.
+</Warning>
+
+## Stop Services
+
+Stop all running NeuraTrade services:
+
+```bash
+./bin/neuratrade gateway stop
+```
+
+### Example Output
+
+```terminal
+🛑 Stopping NeuraTrade services...
+
+✅ Backend API: Stopped (PID: 12345)
+✅ CCXT Service: Stopped (PID: 12346)
+✅ Telegram Service: Stopped (PID: 12347)
+
+✅ Stopped 3 service(s)
+```
+
+### How It Works
+
+1. Reads PID files from `~/.neuratrade/pids/`
+2. Validates process is still running and matches expected pattern
+3. Sends `SIGTERM` signal for graceful shutdown
+4. Removes PID files
+
+### Force Stop
+
+If `gateway stop` doesn't work, manually kill processes:
+
+```bash
+pkill -f neuratrade-server
+pkill -f ccxt-service
+pkill -f telegram-service
+```
+
+## Status Check
+
+Check the status of all services:
+
+```bash
+./bin/neuratrade gateway status
+```
+
+### Example Output
+
+```terminal
+📊 NeuraTrade Service Status
+============================
+
+Runtime Mode: HEALTHY
+Last Update: 2026-03-03T10:30:00Z
+
+✅ Backend API: Running (PID: 12345)
+✅ CCXT Service: Running (PID: 12346)
+✅ Telegram Service: Running (PID: 12347)
+
+🚪 Health Check: http://127.0.0.1:8080/health
+
+✅ Backend Status: healthy
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ✓ ccxt: healthy
+  ✓ telegram: healthy
+```
+
+### Status When Services Are Down
+
+```terminal
+📊 NeuraTrade Service Status
+============================
+
+❌ Backend API: Not running
+❌ CCXT Service: Not running
+❌ Telegram Service: Not running
+
+🚪 Health Check: http://127.0.0.1:8080/health
+
+⚠️  Backend health probe failed: connection refused
+Gateway runtime mode is DOWN (services may still be warming).
+
+Make sure the backend is running:
+  neuratrade gateway start
+```
+
+## Process Management
+
+### PID Files
+
+PID files track running processes:
+
+- `~/.neuratrade/pids/backend.pid`
+- `~/.neuratrade/pids/ccxt.pid`
+- `~/.neuratrade/pids/telegram.pid`
+- `~/.neuratrade/pids/gateway-state.json`
+
+### Stale PID Files
+
+The `gateway stop` command automatically detects and removes stale PID files when:
+
+- Process no longer exists
+- Process doesn't match expected pattern (e.g., `neuratrade-server`)
+
+### Manual Cleanup
+
+Remove PID files if processes were terminated externally:
+
+```bash
+rm ~/.neuratrade/pids/*.pid
+rm ~/.neuratrade/pids/gateway-state.json
+```
+
+## Service Logs
+
+View service logs in real-time:
+
+```bash
+# Backend API
+tail -f ~/.neuratrade/logs/backend.log
+
+# CCXT Service
+tail -f ~/.neuratrade/logs/ccxt.log
+
+# Telegram Service
+tail -f ~/.neuratrade/logs/telegram.log
+```
+
+## Graceful Shutdown
+
+When running `gateway start` interactively, press `Ctrl+C` for graceful shutdown:
+
+```terminal
+^C
+🛑 Shutting down services...
+✅ All services stopped
+```
+
+This sends `SIGTERM` to all services, allowing them to:
+
+- Close database connections
+- Flush logs
+- Complete in-flight requests
+- Clean up resources
+
+## Troubleshooting
+
+### Services Won't Start
+
+Check for port conflicts:
+
+```bash
+lsof -i :8080  # Backend
+lsof -i :3001  # CCXT
+lsof -i :3002  # Telegram
+```
+
+### Health Checks Failing
+
+Increase the health timeout:
+
+```bash
+export NEURATRADE_GATEWAY_HEALTH_TIMEOUT_SECONDS=120
+./bin/neuratrade gateway start
+```
+
+Or use supervised mode:
+
+```bash
+./bin/neuratrade gateway start --supervised
+```
+
+### Services Start Then Crash
+
+Check service logs:
+
+```bash
+tail -100 ~/.neuratrade/logs/backend.log
+tail -100 ~/.neuratrade/logs/ccxt.log
+tail -100 ~/.neuratrade/logs/telegram.log
+```
+
+### Can't Stop Services
+
+Force kill all processes:
+
+```bash
+pkill -9 -f neuratrade-server
+pkill -9 -f ccxt-service
+pkill -9 -f telegram-service
+rm ~/.neuratrade/pids/*.pid
+```

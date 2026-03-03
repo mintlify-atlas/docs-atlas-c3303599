@@ -1,0 +1,552 @@
+---
+title: 'Telegram Bot'
+description: 'Remote control, notifications, and monitoring via Telegram commands'
+icon: 'paper-plane'
+---
+
+## Overview
+
+The NeuraTrade Telegram Bot provides **remote control** and **real-time notifications** for autonomous trading. Monitor portfolio performance, control trading mode, view arbitrage opportunities, and receive risk alerts—all from Telegram.
+
+## Bot Commands
+
+<CardGroup cols={2}>
+  <Card title="/start" icon="play">
+    Register with NeuraTrade and enable arbitrage alerts
+  </Card>
+  <Card title="/help" icon="circle-question">
+    Display all available commands
+  </Card>
+  <Card title="/opportunities" icon="chart-line">
+    View current arbitrage opportunities
+  </Card>
+  <Card title="/status" icon="info">
+    Check account status, subscription, and notifications
+  </Card>
+  <Card title="/settings" icon="gear">
+    View and configure alert preferences
+  </Card>
+  <Card title="/stop" icon="pause">
+    Pause all notifications
+  </Card>
+  <Card title="/resume" icon="play">
+    Resume notifications
+  </Card>
+  <Card title="/mode" icon="toggle-on">
+    Check current trading mode (dry/live)
+  </Card>
+  <Card title="/mode dry" icon="flask">
+    Switch to paper trading mode
+  </Card>
+  <Card title="/mode live" icon="bolt">
+    Switch to live trading mode (requires confirmations)
+  </Card>
+  <Card title="/mode confirm" icon="check">
+    Add confirmation for live mode activation
+  </Card>
+  <Card title="/upgrade" icon="rocket">
+    View premium subscription options
+  </Card>
+</CardGroup>
+
+## Command Details
+
+### /start - Registration
+
+Registers a new user and binds their Telegram chat to a NeuraTrade account.
+
+```typescript services/telegram-service/bot-handlers.ts:24-122
+export const handleStart = (api: Api) => async (ctx: Context) => {
+  const chatId = ctx.chat?.id;
+  const userId = ctx.from?.id;
+  
+  if (!chatId || !userId) {
+    await ctx.reply("Unable to start: missing chat information.");
+    return;
+  }
+  
+  const chatIdStr = String(chatId);
+  
+  // Check if user already exists
+  const userResult = await Effect.runPromise(
+    Effect.catchAll(api.getUserByChatId(chatIdStr), (error) => {
+      if (isApiError(error) && error.type === "not_found") {
+        return Effect.succeed(null);  // User doesn't exist
+      }
+      return Effect.succeed(null);
+    })
+  );
+  
+  // Register new user if not found
+  if (!userResult) {
+    const registerResult = await Effect.runPromise(
+      api.registerTelegramUser(chatIdStr, userId)
+    );
+    
+    if (!registerResult) {
+      await ctx.reply("❌ Registration failed. Please try again.");
+      return;
+    }
+  }
+  
+  const welcomeMsg =
+    "🚀 Welcome to Celebrum AI!\n\n" +
+    "✅ You're now registered and ready to receive arbitrage alerts!\n\n" +
+    "Use /opportunities to see current opportunities.\n" +
+    "Use /help to see available commands.";
+  
+  await ctx.reply(welcomeMsg);
+};
+```
+
+<Info>
+**First-Time Setup**: On first `/start`, the bot creates a user account, binds the Telegram chat ID, and enables notifications.
+</Info>
+
+### /opportunities - View Arbitrage
+
+Fetches and displays the top 5 active arbitrage opportunities.
+
+```typescript services/telegram-service/bot-handlers.ts:5-22
+export const formatOpportunitiesMessage = (opps: any[]) => {
+  if (!opps || opps.length === 0) {
+    return "📊 No arbitrage opportunities found right now.";
+  }
+  
+  const top = opps.slice(0, 5);
+  const lines = ["⚡ Top Arbitrage Opportunities", ""];
+  
+  top.forEach((opp, index) => {
+    lines.push(`${index + 1}. ${opp.symbol}`);
+    lines.push(`   Buy: ${opp.buy_exchange} @ ${opp.buy_price}`);
+    lines.push(`   Sell: ${opp.sell_exchange} @ ${opp.sell_price}`);
+    lines.push(`   Profit: ${Number(opp.profit_percent).toFixed(2)}%`);
+    lines.push("");
+  });
+  
+  return lines.join("\n");
+};
+```
+
+**Example Output**:
+```
+⚡ Top Arbitrage Opportunities
+
+1. BTC/USDT
+   Buy: binance @ 40000.50
+   Sell: coinbase @ 40250.00
+   Profit: 0.62%
+
+2. ETH/USDT
+   Buy: kraken @ 2500.00
+   Sell: binance @ 2515.00
+   Profit: 0.60%
+```
+
+### /status - Account Status
+
+Displays subscription tier, registration date, and notification status.
+
+```typescript services/telegram-service/bot-handlers.ts:168-269
+export const handleStatus = (api: Api) => async (ctx: Context) => {
+  const chatId = ctx.chat?.id;
+  
+  // Fetch user info
+  const userResult = await Effect.runPromise(
+    Effect.catchAll(api.getUserByChatId(String(chatId)), (error) => {
+      if (error.type === "not_found") {
+        return Effect.succeed(null);
+      }
+      return Effect.succeed(null);
+    })
+  );
+  
+  if (!userResult) {
+    await ctx.reply(
+      "👤 User not found in our system.\n\n" +
+      "Use /start to register."
+    );
+    return;
+  }
+  
+  // Get notification preferences
+  const preference = await Effect.runPromise(
+    Effect.catchAll(api.getNotificationPreference(String(userId)), () =>
+      Effect.succeed({ enabled: true, profit_threshold: 0.5 })
+    )
+  );
+  
+  const msg =
+    "📊 Account Status:\n\n" +
+    `💰 Subscription: ${userResult.user.subscription_tier}\n` +
+    `📅 Member since: ${createdAt}\n` +
+    `🔔 Notifications: ${preference.enabled ? "Active" : "Paused"}`;
+  
+  await ctx.reply(msg);
+};
+```
+
+### /mode - Trading Mode Control
+
+Check or switch between paper trading (dry) and live trading modes.
+
+<Warning>
+**Live Mode Safety**: Switching to live mode requires multiple confirmations to prevent accidental activation.
+</Warning>
+
+```typescript services/telegram-service/bot-handlers.ts:377-426
+export const handleMode = (api: Api) => async (ctx: Context) => {
+  const chatId = ctx.chat?.id;
+  
+  // Get current mode from API
+  const modeResult = await Effect.runPromise(
+    Effect.catchAll(api.getTradingMode(String(chatId)), (error) => {
+      return Effect.succeed({
+        mode: "dry",
+        confirmations: 0,
+        required_confirmations: 2,
+      });
+    })
+  );
+  
+  const mode = modeResult.mode || "dry";
+  const confirmations = modeResult.confirmations || 0;
+  const required = modeResult.required_confirmations || 2;
+  
+  let msg: string;
+  if (mode === "dry") {
+    msg =
+      "🧪 Current Mode: DRY (Paper Trading)\n\n" +
+      "• No real orders executed\n" +
+      "• Safe for testing\n\n" +
+      `Confirmations: ${confirmations}/${required}\n\n` +
+      "Commands:\n" +
+      "/mode confirm - Add confirmation\n" +
+      "/mode live - Switch to live (requires confirmations)\n" +
+      "/mode dry - Switch to dry mode";
+  } else {
+    msg =
+      "🔴 Current Mode: LIVE (Real Trading)\n\n" +
+      "⚠️ REAL ORDERS WILL BE EXECUTED\n" +
+      "⚠️ REAL MONEY IS AT RISK\n\n" +
+      "Commands:\n" +
+      "/mode dry - Switch to safe dry mode";
+  }
+  
+  await ctx.reply(msg);
+};
+```
+
+### /mode confirm - Add Confirmation
+
+Adds a confirmation toward live mode activation. Requires 2 confirmations by default.
+
+```typescript services/telegram-service/bot-handlers.ts:479-507
+else if (action === "confirm") {
+  const result = await Effect.runPromise(
+    Effect.catchAll(api.addTradingModeConfirmation(String(chatId)), (error) => {
+      return Effect.succeed({ confirmations: 0, required: 2 });
+    })
+  );
+  
+  if (result.confirmations >= result.required) {
+    await ctx.reply(
+      `✅ Confirmation ${result.confirmations}/${result.required}\n\n` +
+      "You have enough confirmations!\n" +
+      "Use /mode live to switch to live trading.\n\n" +
+      "⚠️ Remember: Live mode uses real money!"
+    );
+  } else {
+    await ctx.reply(
+      `✅ Confirmation ${result.confirmations}/${result.required}\n\n` +
+      "More confirmations needed before live trading.\n" +
+      "Use /mode confirm again to add another confirmation."
+    );
+  }
+}
+```
+
+## Notification Types
+
+### Arbitrage Alerts
+
+Automatic notifications when profitable arbitrage opportunities are detected:
+
+```
+⚡ Arbitrage Alert!
+
+Symbol: BTC/USDT
+Buy: binance @ $40,000
+Sell: coinbase @ $40,250
+Profit: 0.62%
+
+Detected: 2 minutes ago
+Expires: in 3 minutes
+```
+
+### Risk Alerts
+
+Critical risk events trigger immediate notifications:
+
+```
+🚨 RISK ALERT
+
+Daily loss cap reached: $100/$100
+
+All trading has been paused.
+Use /status to check details.
+```
+
+### Quest Updates
+
+Progress notifications for long-running quests:
+
+```
+🎯 Quest Update
+
+Scalping Executor
+Progress: 15/100 trades
+Win Rate: 73%
+PnL: +$42.50
+
+Next execution: in 2 minutes
+```
+
+### AI Reasoning Summaries
+
+Post-trade AI reasoning explanations:
+
+```
+🧠 Trade Reasoning
+
+Symbol: ETH/USDT
+Decision: BUY
+Size: $250
+Confidence: 82%
+
+Analyst: Strong bullish momentum (RSI oversold recovery)
+Risk Manager: Approved (low risk, 2% position)
+Trader: Entry at support level with favorable R:R (1:3)
+
+Executed: Yes
+Order ID: #12345
+```
+
+## Remote Control Capabilities
+
+<CardGroup cols={2}>
+  <Card title="Start/Pause Trading" icon="toggle-on">
+    Control autonomous mode without accessing the web dashboard
+  </Card>
+  <Card title="Adjust Settings" icon="sliders">
+    Change notification preferences, profit thresholds, and alert frequency
+  </Card>
+  <Card title="Monitor Performance" icon="chart-line">
+    View real-time PnL, win rate, and active positions
+  </Card>
+  <Card title="Emergency Stop" icon="octagon">
+    Immediately halt trading via `/mode dry` or `/stop`
+  </Card>
+</CardGroup>
+
+## Admin API Integration
+
+The Telegram service communicates with the backend API using the **Admin API Key**:
+
+```typescript services/telegram-service/src/api/index.ts
+const ADMIN_API_KEY = process.env.ADMIN_API_KEY;
+const API_BASE_URL = process.env.TELEGRAM_API_BASE_URL;
+
+const headers = {
+  "Content-Type": "application/json",
+  "X-Admin-Key": ADMIN_API_KEY,
+};
+```
+
+<Warning>
+**Security**: The `ADMIN_API_KEY` must match between the Telegram service and backend API. Keep this key secret.
+</Warning>
+
+## Webhook vs Polling
+
+The bot supports both webhook and polling modes:
+
+<Tabs>
+  <Tab title="Webhook (Production)">
+    **Recommended for production**. Telegram sends updates directly to your webhook URL.
+    
+    ```bash
+    TELEGRAM_USE_POLLING=false
+    TELEGRAM_WEBHOOK_URL=https://your-domain.com
+    TELEGRAM_WEBHOOK_PATH=/telegram/webhook
+    TELEGRAM_WEBHOOK_SECRET=your-webhook-secret
+    ```
+  </Tab>
+  <Tab title="Polling (Development)">
+    **Recommended for development**. Bot actively polls Telegram for updates.
+    
+    ```bash
+    TELEGRAM_USE_POLLING=true
+    ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### Environment Variables
+
+```bash
+# Required
+TELEGRAM_BOT_TOKEN=your-bot-token
+ADMIN_API_KEY=your-admin-api-key
+TELEGRAM_API_BASE_URL=http://localhost:8080
+
+# Webhook Mode (Production)
+TELEGRAM_USE_POLLING=false
+TELEGRAM_WEBHOOK_URL=https://your-domain.com
+TELEGRAM_WEBHOOK_PATH=/telegram/webhook
+TELEGRAM_WEBHOOK_SECRET=random-secret-string
+
+# Polling Mode (Development)
+TELEGRAM_USE_POLLING=true
+
+# Optional
+PORT=3001
+LOG_LEVEL=info
+```
+
+### Bot Token Setup
+
+<Steps>
+  <Step title="Create Bot">
+    Message [@BotFather](https://t.me/botfather) on Telegram and use `/newbot`
+  </Step>
+  <Step title="Get Token">
+    BotFather will provide a token like `123456789:ABCdefGHIjklMNOpqrsTUVwxyz`
+  </Step>
+  <Step title="Set Environment Variable">
+    Add to `.env`: `TELEGRAM_BOT_TOKEN=your-token-here`
+  </Step>
+  <Step title="Start Service">
+    Run `bun run dev:bun` to start the Telegram service
+  </Step>
+</Steps>
+
+## gRPC Delivery Interface
+
+The Telegram service exposes a gRPC interface for programmatic message delivery:
+
+```protobuf protos/telegram_service.proto
+service TelegramService {
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message SendMessageRequest {
+  int64 chat_id = 1;
+  string message = 2;
+  string parse_mode = 3;  // "Markdown" or "HTML"
+}
+```
+
+### gRPC Usage Example
+
+```go
+// Send notification via gRPC
+client := telegram.NewTelegramServiceClient(conn)
+req := &telegram.SendMessageRequest{
+    ChatId:    chatID,
+    Message:   "🚨 Daily loss cap reached!",
+    ParseMode: "Markdown",
+}
+resp, err := client.SendMessage(ctx, req)
+```
+
+## Error Handling
+
+The bot implements comprehensive error handling:
+
+```typescript services/telegram-service/bot-handlers.ts:144-166
+try {
+  const response = await Effect.runPromise(api.getOpportunities());
+  await ctx.reply(formatOpportunitiesMessage(response.opportunities));
+} catch (error) {
+  let errorMessage = "An unexpected error occurred.";
+  
+  const apiError = extractApiError(error);
+  if (apiError) {
+    errorMessage =
+      apiError.type === "network_error"
+        ? "Unable to connect to the server."
+        : apiError.type === "server_error"
+        ? "Server is temporarily unavailable."
+        : apiError.message;
+  }
+  
+  await ctx.reply(
+    `❌ Failed to fetch opportunities.\n\n${errorMessage}\n\nPlease try again later.`
+  );
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Keep Token Secret" icon="lock">
+    Never commit `TELEGRAM_BOT_TOKEN` to version control. Use environment variables.
+  </Card>
+  <Card title="Use Webhook in Production" icon="webhook">
+    Webhooks are more reliable and efficient than polling for production deployments.
+  </Card>
+  <Card title="Test Commands First" icon="flask">
+    Always test bot commands in paper trading mode before enabling live trading.
+  </Card>
+  <Card title="Monitor Logs" icon="file-lines">
+    Track Telegram service logs for failed deliveries and API errors.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Bot Not Responding" icon="robot">
+    **Check**:
+    - Is `TELEGRAM_BOT_TOKEN` set correctly?
+    - Is the Telegram service running?
+    - Check logs for authentication errors
+    
+    **Solution**: Verify token with BotFather, restart service.
+  </Accordion>
+  
+  <Accordion title="Commands Return Errors" icon="exclamation">
+    **Check**:
+    - Is `ADMIN_API_KEY` matching between services?
+    - Is backend API accessible from Telegram service?
+    - Check network connectivity
+    
+    **Solution**: Verify API key, check `TELEGRAM_API_BASE_URL`, review logs.
+  </Accordion>
+  
+  <Accordion title="No Notifications Received" icon="bell-slash">
+    **Check**:
+    - User registered with `/start`?
+    - Notifications enabled? (check with `/settings`)
+    - gRPC server running on backend?
+    
+    **Solution**: Run `/start`, `/resume`, verify gRPC connectivity.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+<CardGroup cols={3}>
+  <Card title="Autonomous Trading" href="/features/autonomous-trading" icon="robot">
+    Control autonomous mode via Telegram
+  </Card>
+  <Card title="Risk Management" href="/features/risk-management" icon="shield">
+    Receive risk alerts and check limits
+  </Card>
+  <Card title="AI Agents" href="/features/ai-agents" icon="brain">
+    Get AI reasoning summaries via Telegram
+  </Card>
+</CardGroup>

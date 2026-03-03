@@ -1,0 +1,469 @@
+---
+title: Authentication
+description: Authentication methods for the NeuraTrade API including JWT tokens, API keys, and admin authentication
+---
+
+## Overview
+
+The NeuraTrade API supports two authentication methods:
+
+1. **JWT (JSON Web Token)** - For user-specific endpoints requiring authentication
+2. **Admin API Key** - For administrative and internal service endpoints
+
+## JWT Authentication
+
+JWT tokens are used to authenticate regular user requests. Tokens are obtained through the login endpoint and must be included in the `Authorization` header for protected endpoints.
+
+### Token Format
+
+JWT tokens use the HS256 signing algorithm and include the following claims:
+
+<ResponseField name="user_id" type="string">
+  Unique identifier for the authenticated user
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="exp" type="integer">
+  Token expiration timestamp (Unix time)
+</ResponseField>
+
+<ResponseField name="iat" type="integer">
+  Token issued at timestamp (Unix time)
+</ResponseField>
+
+<ResponseField name="nbf" type="integer">
+  Token not valid before timestamp (Unix time)
+</ResponseField>
+
+### Obtaining a JWT Token
+
+To obtain a JWT token, authenticate with your credentials:
+
+```bash
+POST /api/v1/users/login
+```
+
+**Request Body:**
+
+<ParamField body="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password (minimum 8 characters)
+</ParamField>
+
+**Example Request:**
+
+```json
+{
+  "email": "trader@example.com",
+  "password": "securepassword123"
+}
+```
+
+**Example Response:**
+
+```json
+{
+  "user": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "email": "trader@example.com",
+    "subscription_tier": "free",
+    "telegram_chat_id": "123456789",
+    "created_at": "2026-01-15T10:00:00Z",
+    "updated_at": "2026-03-03T10:30:00Z"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Using JWT Tokens
+
+Include the JWT token in the `Authorization` header with the `Bearer` scheme:
+
+```bash
+GET /api/v1/users/profile
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Example with cURL:**
+
+```bash
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  http://localhost:8080/api/v1/users/profile
+```
+
+### Token Expiration
+
+JWT tokens are valid for **24 hours** from issuance. After expiration, you must obtain a new token by logging in again.
+
+**Expired Token Response (HTTP 401):**
+
+```json
+{
+  "error": "Token expired"
+}
+```
+
+### JWT-Protected Endpoints
+
+The following endpoint groups require JWT authentication:
+
+- **User Management**: `/api/v1/users/profile`
+- **Alerts**: `/api/v1/alerts/*`
+- **Trading**: `/api/v1/trading/*`
+- **Budget**: `/api/v1/budget/*`
+- **AI Models**: `/api/v1/ai/select/:userId`, `/api/v1/ai/status/:userId`
+
+<Note>
+The middleware extracts `user_id` and `user_email` from valid tokens and makes them available to handlers via the Gin context (`c.GetString("user_id")`).
+</Note>
+
+## Admin API Key Authentication
+
+Admin API keys provide access to administrative and internal service endpoints. These keys are configured via environment variables or the NeuraTrade configuration file.
+
+### Configuration
+
+Admin API keys can be configured in two ways:
+
+**1. Environment Variable:**
+
+```bash
+export ADMIN_API_KEY="your-secure-admin-key-min-32-chars"
+```
+
+**2. Configuration File (`~/.neuratrade/config.json`):**
+
+```json
+{
+  "admin_api_key": "your-secure-admin-key-min-32-chars"
+}
+```
+
+<Warning>
+**Security Requirements:**
+- Admin API keys must be at least **32 characters** long in production
+- Default or example keys (e.g., `"admin-dev-key-change-in-production"`) are rejected in production mode
+- In production environments (`ENVIRONMENT=production` or `GIN_MODE=release`), the API key **must** be explicitly configured or the service will fail to start
+</Warning>
+
+### Using Admin API Keys
+
+Admin API keys can be provided in two ways:
+
+**1. Authorization Header (Recommended):**
+
+```bash
+Authorization: Bearer YOUR_ADMIN_API_KEY
+```
+
+**2. X-API-Key Header:**
+
+```bash
+X-API-Key: YOUR_ADMIN_API_KEY
+```
+
+**Example Request:**
+
+```bash
+curl -H "X-API-Key: YOUR_ADMIN_API_KEY" \
+  http://localhost:8080/api/v1/admin/circuit-breakers
+```
+
+<Note>
+The middleware uses constant-time comparison to prevent timing attacks when validating API keys.
+</Note>
+
+### Admin-Protected Endpoints
+
+The following endpoint groups require admin authentication:
+
+#### Exchange Management
+
+```bash
+POST /api/v1/exchanges/refresh
+POST /api/v1/exchanges/add/:exchange
+POST /api/v1/exchanges/blacklist/:exchange
+DELETE /api/v1/exchanges/blacklist/:exchange
+POST /api/v1/exchanges/workers/:exchange/restart
+```
+
+#### Circuit Breaker Management
+
+```bash
+GET /api/v1/admin/circuit-breakers
+POST /api/v1/admin/circuit-breakers/:name/reset
+POST /api/v1/admin/circuit-breakers/reset-all
+```
+
+#### Risk Management
+
+```bash
+POST /api/v1/admin/risk/validate_wallet
+POST /api/v1/admin/risk/force_resume
+```
+
+#### Telegram Internal Endpoints
+
+```bash
+GET /api/v1/telegram/internal/quests
+GET /api/v1/telegram/internal/quests/diagnostics
+GET /api/v1/telegram/internal/portfolio
+GET /api/v1/telegram/internal/logs
+GET /api/v1/telegram/internal/performance/summary
+GET /api/v1/telegram/internal/performance
+POST /api/v1/telegram/internal/liquidate
+POST /api/v1/telegram/internal/liquidate/all
+GET /api/v1/telegram/internal/mode/:chatId
+POST /api/v1/telegram/internal/mode/:chatId
+```
+
+<Note>
+Internal service-to-service endpoints under `/internal/telegram/*` do not require authentication as they are restricted to trusted internal callers within the service network.
+</Note>
+
+## User Registration
+
+To create a new user account:
+
+```bash
+POST /api/v1/users/register
+```
+
+**Request Body:**
+
+<ParamField body="email" type="string" required>
+  User's email address (must be valid email format)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password (minimum 8 characters)
+</ParamField>
+
+<ParamField body="telegram_chat_id" type="string">
+  Optional Telegram chat ID to link with the account
+</ParamField>
+
+**Example Request:**
+
+```json
+{
+  "email": "newtrader@example.com",
+  "password": "strongpassword456",
+  "telegram_chat_id": "987654321"
+}
+```
+
+**Example Response (HTTP 201):**
+
+```json
+{
+  "user": {
+    "id": "660e9511-f39c-52e5-b827-557766551111",
+    "email": "newtrader@example.com",
+    "subscription_tier": "free",
+    "telegram_chat_id": "987654321",
+    "created_at": "2026-03-03T10:30:00Z",
+    "updated_at": "2026-03-03T10:30:00Z"
+  }
+}
+```
+
+<Warning>
+Passwords are hashed using bcrypt with default cost factor before storage. Plain passwords are never stored.
+</Warning>
+
+## Authentication Errors
+
+### Missing Authorization Header
+
+**HTTP 401:**
+
+```json
+{
+  "error": "Authorization header required"
+}
+```
+
+### Invalid Authorization Format
+
+**HTTP 401:**
+
+```json
+{
+  "error": "Invalid authorization header format"
+}
+```
+
+### Invalid or Expired Token
+
+**HTTP 401:**
+
+```json
+{
+  "error": "Invalid token"
+}
+```
+
+### Invalid Token Claims
+
+**HTTP 401:**
+
+```json
+{
+  "error": "Invalid token claims"
+}
+```
+
+### Admin Authentication Failed
+
+**HTTP 401:**
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Valid admin API key required for this endpoint",
+  "code": "ADMIN_AUTH_FAILED"
+}
+```
+
+## Security Best Practices
+
+<Warning>
+**Production Security:**
+
+1. **JWT Secret**: Set `JWT_SECRET` environment variable to a strong, random value of at least 32 characters
+2. **Admin API Key**: Use a cryptographically secure random key of at least 32 characters
+3. **HTTPS**: Always use HTTPS in production to prevent token interception
+4. **Token Storage**: Store JWT tokens securely (e.g., httpOnly cookies, secure storage)
+5. **Key Rotation**: Regularly rotate admin API keys and update services
+6. **Environment Variables**: Never commit secrets to version control
+</Warning>
+
+## Code Examples
+
+### JavaScript/TypeScript
+
+```typescript
+// Login and store token
+const login = async (email: string, password: string) => {
+  const response = await fetch('http://localhost:8080/api/v1/users/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  
+  const data = await response.json();
+  localStorage.setItem('jwt_token', data.token);
+  return data;
+};
+
+// Make authenticated request
+const getProfile = async () => {
+  const token = localStorage.getItem('jwt_token');
+  const response = await fetch('http://localhost:8080/api/v1/users/profile', {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+  
+  return response.json();
+};
+```
+
+### Python
+
+```python
+import requests
+
+# Login and get token
+def login(email: str, password: str) -> str:
+    response = requests.post(
+        'http://localhost:8080/api/v1/users/login',
+        json={'email': email, 'password': password}
+    )
+    data = response.json()
+    return data['token']
+
+# Make authenticated request
+def get_profile(token: str) -> dict:
+    response = requests.get(
+        'http://localhost:8080/api/v1/users/profile',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+    return response.json()
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+type LoginRequest struct {
+    Email    string `json:"email"`
+    Password string `json:"password"`
+}
+
+type LoginResponse struct {
+    Token string `json:"token"`
+}
+
+func login(email, password string) (string, error) {
+    reqBody, _ := json.Marshal(LoginRequest{
+        Email:    email,
+        Password: password,
+    })
+    
+    resp, err := http.Post(
+        "http://localhost:8080/api/v1/users/login",
+        "application/json",
+        bytes.NewBuffer(reqBody),
+    )
+    if err != nil {
+        return "", err
+    }
+    defer resp.Body.Close()
+    
+    var loginResp LoginResponse
+    json.NewDecoder(resp.Body).Decode(&loginResp)
+    return loginResp.Token, nil
+}
+
+func getProfile(token string) (*http.Response, error) {
+    req, _ := http.NewRequest(
+        "GET",
+        "http://localhost:8080/api/v1/users/profile",
+        nil,
+    )
+    req.Header.Set("Authorization", "Bearer "+token)
+    
+    client := &http.Client{}
+    return client.Do(req)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Market Data" icon="chart-line" href="/api/market">
+    Access real-time market prices and data
+  </Card>
+  <Card title="Arbitrage" icon="arrows-rotate" href="/api/arbitrage">
+    Find and execute arbitrage opportunities
+  </Card>
+  <Card title="Trading" icon="robot" href="/api/trading">
+    Manage positions and execute trades
+  </Card>
+  <Card title="User Management" icon="user" href="/api/users">
+    Manage user profiles and settings
+  </Card>
+</CardGroup>

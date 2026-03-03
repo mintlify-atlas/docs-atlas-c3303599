@@ -1,0 +1,174 @@
+---
+title: 'Get Spot Arbitrage Opportunities'
+api: 'GET /api/v1/arbitrage/opportunities'
+description: 'Detect real-time spot arbitrage opportunities across multiple exchanges'
+---
+
+## Overview
+
+This endpoint analyzes market data to identify profitable arbitrage opportunities where an asset can be bought on one exchange and simultaneously sold on another for profit. The system employs multiple detection strategies including price differences, technical analysis, volatility patterns, and bid-ask spread analysis.
+
+## Query Parameters
+
+<ParamField query="min_profit" type="number" default="0.5">
+  Minimum profit percentage threshold to filter opportunities (e.g., `0.5` for 0.5%)
+</ParamField>
+
+<ParamField query="limit" type="integer" default="50">
+  Maximum number of opportunities to return (1-100)
+</ParamField>
+
+<ParamField query="symbol" type="string">
+  Filter opportunities for a specific trading pair (e.g., `BTC/USDT`)
+</ParamField>
+
+## Response
+
+<ResponseField name="opportunities" type="array">
+  List of detected arbitrage opportunities
+  
+  <Expandable title="opportunity object">
+    <ResponseField name="symbol" type="string">
+      Trading pair symbol (e.g., `BTC/USDT`)
+    </ResponseField>
+    
+    <ResponseField name="buy_exchange" type="string">
+      Exchange name to buy from (lower price)
+    </ResponseField>
+    
+    <ResponseField name="sell_exchange" type="string">
+      Exchange name to sell to (higher price)
+    </ResponseField>
+    
+    <ResponseField name="buy_price" type="number">
+      Purchase price on the buy exchange
+    </ResponseField>
+    
+    <ResponseField name="sell_price" type="number">
+      Selling price on the sell exchange
+    </ResponseField>
+    
+    <ResponseField name="profit_percent" type="number">
+      Profit percentage calculated as: `((sell_price - buy_price) / buy_price) * 100`
+    </ResponseField>
+    
+    <ResponseField name="profit_amount" type="number">
+      Estimated profit amount in quote currency (USDT/USD)
+    </ResponseField>
+    
+    <ResponseField name="volume" type="number">
+      Available volume for the trade (minimum of buy and sell exchange volumes)
+    </ResponseField>
+    
+    <ResponseField name="timestamp" type="string">
+      Detection timestamp in ISO 8601 format
+    </ResponseField>
+    
+    <ResponseField name="opportunity_type" type="string">
+      Classification of the opportunity type:
+      - `arbitrage`: Cross-exchange price difference
+      - `technical_oversold`: Technical analysis indicating oversold condition
+      - `technical_overbought`: Technical analysis indicating overbought condition
+      - `volatility`: High volatility pattern detected
+      - `spread`: Bid-ask spread arbitrage
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="count" type="integer">
+  Number of opportunities in the response
+</ResponseField>
+
+<ResponseField name="timestamp" type="string">
+  Response generation timestamp in ISO 8601 format
+</ResponseField>
+
+## Profit Calculation
+
+<Note>
+  The profit percentage is calculated using high-precision decimals to avoid floating-point errors:
+  
+  ```
+  profit_percent = ((sell_price - buy_price) / buy_price) * 100
+  profit_amount = (sell_price - buy_price) * volume
+  ```
+  
+  This calculation does **not** include:
+  - Exchange trading fees (typically 0.1% - 0.5% per trade)
+  - Withdrawal fees
+  - Network transfer fees
+  - Slippage
+  
+  Always factor in total transaction costs before executing trades.
+</Note>
+
+## Detection Strategies
+
+The endpoint uses multiple strategies to identify opportunities:
+
+1. **Cross-Exchange Price Differences**: Compares prices across exchanges for the same symbol within a 5-minute window
+2. **Technical Analysis**: Identifies oversold/overbought conditions using 5-period SMA with 30-minute historical data
+3. **Volatility Analysis**: Detects high volatility patterns over 1-hour windows where price range exceeds minimum profit threshold
+4. **Bid-Ask Spread**: Finds opportunities to buy at lowest ask and sell at highest bid across exchanges
+
+## Example Request
+
+```bash
+curl -X GET "https://api.neuratrade.com/api/v1/arbitrage/opportunities?min_profit=1.0&limit=10&symbol=BTC/USDT" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## Example Response
+
+```json
+{
+  "opportunities": [
+    {
+      "symbol": "BTC/USDT",
+      "buy_exchange": "binance",
+      "sell_exchange": "bybit",
+      "buy_price": 43250.50,
+      "sell_price": 43680.25,
+      "profit_percent": 0.993,
+      "profit_amount": 429.75,
+      "volume": 1.5,
+      "timestamp": "2026-03-03T10:15:30Z",
+      "opportunity_type": "arbitrage"
+    },
+    {
+      "symbol": "ETH/USDT",
+      "buy_exchange": "okx",
+      "sell_exchange": "bitget",
+      "buy_price": 2345.80,
+      "sell_price": 2368.90,
+      "profit_percent": 0.984,
+      "profit_amount": 23.10,
+      "volume": 12.3,
+      "timestamp": "2026-03-03T10:15:28Z",
+      "opportunity_type": "spread"
+    }
+  ],
+  "count": 2,
+  "timestamp": "2026-03-03T10:15:30Z"
+}
+```
+
+## Implementation Details
+
+<Warning>
+  Arbitrage opportunities are time-sensitive and may disappear within seconds. The endpoint:
+  - Uses market data from the last 5 minutes for cross-exchange analysis
+  - Automatically notifies high-profit opportunities (>1%) via configured notification channels
+  - Sorts results by profit percentage (descending)
+  - Returns empty array if no opportunities meet the minimum profit threshold
+</Warning>
+
+## Source Reference
+
+Implementation: `services/backend-api/internal/api/handlers/arbitrage.go:159-205`
+
+Core detection logic:
+- Cross-exchange opportunities: `arbitrage.go:498-574`
+- Technical analysis: `arbitrage.go:649-785`
+- Volatility detection: `arbitrage.go:787-870`
+- Spread analysis: `arbitrage.go:872-1009`

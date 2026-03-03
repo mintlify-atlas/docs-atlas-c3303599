@@ -1,0 +1,852 @@
+---
+title: 'Monitoring & Health Checks'
+description: 'Complete guide to monitoring NeuraTrade services, health endpoints, and system diagnostics'
+icon: 'chart-line'
+---
+
+# Monitoring & Health Checks
+
+NeuraTrade provides comprehensive monitoring capabilities to track service health, system performance, and trading activity.
+
+## Overview
+
+Monitoring features include:
+
+- **Health endpoints** for service status verification
+- **Service logs** with structured logging
+- **Redis monitoring** for cache and state tracking
+- **Exchange connectivity** checks for market data reliability
+- **Quest progress tracking** for autonomous trading milestones
+- **Trading metrics** for performance analysis
+
+## Health Endpoints
+
+NeuraTrade exposes several health check endpoints for monitoring.
+
+### Backend Health Check
+
+The primary health endpoint provides comprehensive system status.
+
+```bash
+curl http://localhost:8080/health
+```
+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T10:30:00Z",
+  "services": {
+    "database": "healthy",
+    "redis": "healthy",
+    "ccxt": "healthy",
+    "telegram": "healthy"
+  },
+  "version": "1.0.0",
+  "uptime": "2h15m30s",
+  "cache_metrics": {
+    "hit_rate": 0.85,
+    "total_requests": 12450,
+    "hits": 10582,
+    "misses": 1868
+  },
+  "cache_stats": {
+    "market_data": {
+      "size": 1024,
+      "hits": 5420,
+      "misses": 234,
+      "evictions": 12
+    },
+    "orderbook": {
+      "size": 512,
+      "hits": 3200,
+      "misses": 890,
+      "evictions": 45
+    }
+  }
+}
+```
+
+<Note>
+The health endpoint returns HTTP 200 for `healthy` or `degraded` status. It only returns HTTP 503 when critical services (database) are unhealthy.
+</Note>
+
+**Status Values:**
+
+<Tabs>
+  <Tab title="healthy">
+    All services operational:
+    ```json
+    {
+      "status": "healthy",
+      "services": {
+        "database": "healthy",
+        "redis": "healthy",
+        "ccxt": "healthy",
+        "telegram": "healthy"
+      }
+    }
+    ```
+  </Tab>
+  
+  <Tab title="degraded">
+    Some non-critical services unhealthy:
+    ```json
+    {
+      "status": "degraded",
+      "services": {
+        "database": "healthy",
+        "redis": "healthy",
+        "ccxt": "unhealthy: connection failed",
+        "telegram": "unhealthy: TELEGRAM_BOT_TOKEN not set"
+      }
+    }
+    ```
+    
+    System continues operating with reduced functionality.
+  </Tab>
+  
+  <Tab title="unhealthy">
+    Critical services down (HTTP 503):
+    ```json
+    {
+      "status": "degraded",
+      "services": {
+        "database": "unhealthy: connection timeout",
+        "redis": "healthy",
+        "ccxt": "healthy",
+        "telegram": "healthy"
+      }
+    }
+    ```
+    
+    Returns 503 Service Unavailable when database is down.
+  </Tab>
+</Tabs>
+
+**Implementation Reference:**
+
+`services/backend-api/internal/api/handlers/health.go:91`
+
+### Readiness Check
+
+For Kubernetes/load balancer readiness probes:
+
+```bash
+curl http://localhost:8080/ready
+```
+
+**Response:**
+
+```json
+{
+  "ready": true,
+  "services": {
+    "database": "ready",
+    "redis": "ready",
+    "ccxt": "ready"
+  }
+}
+```
+
+**Behavior:**
+- Returns HTTP 200 when all critical services are ready
+- Returns HTTP 503 if database or Redis are not ready
+- CCXT unavailability marks service as degraded (200) not unready (503)
+
+**Use Cases:**
+- Kubernetes readiness probe
+- Load balancer health checks
+- Zero-downtime deployment verification
+
+**Implementation:** `services/backend-api/internal/api/handlers/health.go:301`
+
+### Liveness Check
+
+Lightweight check confirming the process is responsive:
+
+```bash
+curl http://localhost:8080/live
+```
+
+**Response:**
+
+```json
+{
+  "status": "alive",
+  "timestamp": "2026-03-03T10:30:00Z"
+}
+```
+
+Always returns HTTP 200 if the process can handle requests.
+
+**Use Cases:**
+- Kubernetes liveness probe
+- Process restart triggers
+- Basic uptime monitoring
+
+**Implementation:** `services/backend-api/internal/api/handlers/health.go:385`
+
+### Telegram Service Health
+
+Check Telegram bot service status:
+
+```bash
+curl http://localhost:3002/health
+```
+
+**Response:**
+
+<Tabs>
+  <Tab title="Healthy">
+    ```json
+    {
+      "status": "healthy",
+      "service": "telegram-service",
+      "bot_active": true
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Degraded">
+    ```json
+    {
+      "status": "degraded",
+      "service": "telegram-service",
+      "error": "TELEGRAM_BOT_TOKEN not configured",
+      "bot_active": false
+    }
+    ```
+    
+    Service runs in degraded mode without bot token.
+  </Tab>
+</Tabs>
+
+**Implementation:** `services/telegram-service/index.ts:56`
+
+### CCXT Service Health
+
+Check exchange connectivity service:
+
+```bash
+curl http://localhost:3001/health
+```
+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T10:30:00Z",
+  "service": "ccxt-service",
+  "version": "1.0.0",
+  "exchanges_count": 6,
+  "exchange_connectivity": "operational"
+}
+```
+
+**Fields:**
+- `exchanges_count` - Number of active exchanges
+- `exchange_connectivity` - Overall connectivity status
+
+## Service Logs
+
+NeuraTrade uses structured logging for all services.
+
+### Log Locations
+
+| Service | Log File | Format |
+|---------|----------|--------|
+| Backend API | `~/.neuratrade/logs/backend.log` | JSON |
+| Gateway | `~/.neuratrade/logs/gateway.log` | Text |
+| Telegram Service | `~/.neuratrade/logs/telegram.log` | JSON |
+| CCXT Service | `~/.neuratrade/logs/ccxt.log` | JSON |
+
+### Viewing Logs
+
+<Tabs>
+  <Tab title="Backend Logs">
+    ```bash
+    # Follow backend logs
+    tail -f ~/.neuratrade/logs/backend.log
+    
+    # Or via Make
+    make logs
+    ```
+    
+    **Example Output:**
+    ```json
+    {"time":"2026-03-03T10:30:00Z","level":"INFO","msg":"Starting NeuraTrade server","port":8080}
+    {"time":"2026-03-03T10:30:01Z","level":"INFO","msg":"Database connected","driver":"sqlite"}
+    {"time":"2026-03-03T10:30:01Z","level":"INFO","msg":"Redis connected","host":"localhost","port":6379}
+    {"time":"2026-03-03T10:30:02Z","level":"INFO","msg":"Server started","addr":"0.0.0.0:8080"}
+    ```
+  </Tab>
+  
+  <Tab title="Gateway Logs">
+    ```bash
+    # Follow gateway logs
+    tail -f ~/.neuratrade/logs/gateway.log
+    
+    # Or via Make
+    make logs-all
+    ```
+    
+    **Example Output:**
+    ```
+    [2026-03-03 10:30:00] Starting NeuraTrade Gateway...
+    [2026-03-03 10:30:00] Backend Port: 8080
+    [2026-03-03 10:30:01] CCXT Service started (PID: 12346)
+    [2026-03-03 10:30:02] Backend API started (PID: 12345)
+    [2026-03-03 10:30:03] Telegram Service started (PID: 12347)
+    [2026-03-03 10:30:05] All services healthy
+    ```
+  </Tab>
+  
+  <Tab title="Telegram Logs">
+    ```bash
+    tail -f ~/.neuratrade/logs/telegram.log
+    ```
+    
+    **Example Output:**
+    ```json
+    {"level":"info","time":1709465400,"msg":"Telegram service started","port":3002,"mode":"polling"}
+    {"level":"info","time":1709465401,"msg":"Bot polling started","botId":1234567890,"username":"neuratrade_bot"}
+    {"level":"info","time":1709465430,"msg":"Update processed","updateId":123456,"timeMs":45}
+    ```
+  </Tab>
+</Tabs>
+
+### Log Levels
+
+Control log verbosity via `LOG_LEVEL` environment variable:
+
+```bash
+export LOG_LEVEL=debug  # debug, info, warn, error
+```
+
+<Tabs>
+  <Tab title="debug">
+    Most verbose - includes all debug information:
+    ```json
+    {"level":"DEBUG","msg":"Cache hit","key":"market:BTC/USDT","ttl":298}
+    {"level":"DEBUG","msg":"SQL query","duration":"2.5ms","rows":1}
+    {"level":"INFO","msg":"Request completed","method":"GET","path":"/health","status":200}
+    ```
+  </Tab>
+  
+  <Tab title="info">
+    Normal operation (default):
+    ```json
+    {"level":"INFO","msg":"Server started","port":8080}
+    {"level":"INFO","msg":"Trade executed","symbol":"BTC/USDT","side":"buy"}
+    ```
+  </Tab>
+  
+  <Tab title="warn">
+    Warnings and errors only:
+    ```json
+    {"level":"WARN","msg":"Rate limit approaching","remaining":10,"limit":100}
+    {"level":"ERROR","msg":"Failed to fetch orderbook","exchange":"binance","error":"timeout"}
+    ```
+  </Tab>
+  
+  <Tab title="error">
+    Errors only:
+    ```json
+    {"level":"ERROR","msg":"Database connection lost","error":"connection refused"}
+    ```
+  </Tab>
+</Tabs>
+
+### Log Rotation
+
+For production, configure `logrotate`:
+
+```bash /etc/logrotate.d/neuratrade
+/home/neuratrade/.neuratrade/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 0644 neuratrade neuratrade
+    sharedscripts
+    postrotate
+        systemctl reload neuratrade >/dev/null 2>&1 || true
+    endscript
+}
+```
+
+This rotates logs daily, keeping 14 days of history.
+
+## Redis Monitoring
+
+Monitor Redis cache and state storage.
+
+### Redis CLI Monitoring
+
+```bash
+# Connect to Redis
+redis-cli
+
+# Monitor all commands
+MONITOR
+
+# Check memory usage
+INFO memory
+
+# List NeuraTrade keys
+KEYS neuratrade:*
+
+# Get key info
+TYPE neuratrade:cache:market:BTC/USDT
+TTL neuratrade:cache:market:BTC/USDT
+```
+
+### Cache Metrics
+
+NeuraTrade tracks cache performance in the health endpoint:
+
+```bash
+curl http://localhost:8080/health | jq '.cache_metrics'
+```
+
+**Response:**
+
+```json
+{
+  "hit_rate": 0.85,
+  "total_requests": 12450,
+  "hits": 10582,
+  "misses": 1868
+}
+```
+
+**Per-Cache Stats:**
+
+```bash
+curl http://localhost:8080/health | jq '.cache_stats'
+```
+
+```json
+{
+  "market_data": {
+    "size": 1024,
+    "hits": 5420,
+    "misses": 234,
+    "evictions": 12
+  },
+  "orderbook": {
+    "size": 512,
+    "hits": 3200,
+    "misses": 890,
+    "evictions": 45
+  },
+  "ticker": {
+    "size": 256,
+    "hits": 1962,
+    "misses": 744,
+    "evictions": 8
+  }
+}
+```
+
+**Metrics:**
+- `size` - Current cache entries
+- `hits` - Successful cache lookups
+- `misses` - Cache misses requiring fresh data
+- `evictions` - Entries removed due to TTL or memory pressure
+
+<Tip>
+A hit rate above 80% indicates healthy cache performance. Below 60% may indicate:
+- TTL values too short
+- High data volatility
+- Insufficient cache size
+</Tip>
+
+## Exchange Connectivity Checks
+
+Monitor exchange API connectivity and reliability.
+
+### Check Active Exchanges
+
+```bash
+curl -H "X-API-Key: $ADMIN_API_KEY" \
+  http://localhost:8080/api/v1/exchanges
+```
+
+**Response:**
+
+```json
+{
+  "exchanges": [
+    {
+      "name": "binance",
+      "enabled": true,
+      "has_auth": true,
+      "added_at": "2026-03-01T00:00:00Z"
+    },
+    {
+      "name": "bybit",
+      "enabled": true,
+      "has_auth": true,
+      "added_at": "2026-03-01T00:00:00Z"
+    },
+    {
+      "name": "okx",
+      "enabled": true,
+      "has_auth": false,
+      "added_at": "2026-03-02T12:00:00Z"
+    }
+  ],
+  "count": 3
+}
+```
+
+### Test Exchange Connectivity
+
+The backend health check includes CCXT service validation:
+
+```bash
+curl http://localhost:8080/health | jq '.services.ccxt'
+```
+
+**Response:**
+
+```json
+"healthy"
+```
+
+If unhealthy:
+
+```json
+"unhealthy: connection failed: dial tcp 127.0.0.1:3001: connect: connection refused"
+```
+
+**Health Check Logic:**
+
+1. Probe CCXT service at `http://127.0.0.1:3001/health`
+2. Parse response and verify `exchanges_count > 0`
+3. If connection fails or no exchanges, mark unhealthy
+
+**Implementation:** `services/backend-api/internal/api/handlers/health.go:246`
+
+## Quest Progress Tracking
+
+Monitor autonomous trading achievements.
+
+### Get Quest Status
+
+```bash
+curl http://localhost:8080/api/v1/telegram/internal/quests?chat_id=123456789
+```
+
+**Response:**
+
+```json
+{
+  "quests": [
+    {
+      "id": "first_trade",
+      "title": "First Trade",
+      "description": "Execute your first successful trade",
+      "status": "completed",
+      "progress": 1,
+      "max_progress": 1,
+      "updated_at": "2026-03-03T08:00:00Z"
+    },
+    {
+      "id": "profit_streak",
+      "title": "Profit Streak",
+      "description": "Achieve 5 profitable trades in a row",
+      "status": "in_progress",
+      "progress": 3,
+      "max_progress": 5,
+      "updated_at": "2026-03-03T10:00:00Z"
+    },
+    {
+      "id": "volume_milestone",
+      "title": "Volume Milestone",
+      "description": "Trade $10,000 total volume",
+      "status": "in_progress",
+      "progress": 7500,
+      "max_progress": 10000,
+      "updated_at": "2026-03-03T10:30:00Z"
+    }
+  ],
+  "updated_at": "2026-03-03T10:30:00Z"
+}
+```
+
+**Quest Status Values:**
+- `not_started` - Quest available but not begun
+- `in_progress` - Actively working on quest
+- `completed` - Quest achieved
+- `failed` - Quest failed (e.g., streak broken)
+
+### Via Telegram
+
+```
+/quest
+```
+
+**Bot Response:**
+
+```
+🎯 Quest Progress
+
+✅ First Trade (1/1)
+    Execute your first successful trade
+
+⏳ Profit Streak (3/5) [60%]
+    Achieve 5 profitable trades in a row
+
+⏳ Volume Milestone ($7,500/$10,000) [75%]
+    Trade $10,000 total volume
+
+Last Updated: 2026-03-03 10:30 UTC
+```
+
+## Trading Metrics
+
+Monitor trading performance and system behavior.
+
+### Portfolio Status
+
+```bash
+curl http://localhost:8080/api/v1/telegram/internal/portfolio?chat_id=123456789
+```
+
+**Response:**
+
+```json
+{
+  "total_equity": "10,500.00 USDT",
+  "available_balance": "8,200.00 USDT",
+  "exposure": "2,300.00 USDT",
+  "positions": [
+    {
+      "symbol": "BTC/USDT",
+      "side": "long",
+      "size": "0.05",
+      "entry_price": "45,000.00",
+      "mark_price": "46,000.00",
+      "unrealized_pnl": "+50.00 USDT"
+    }
+  ],
+  "updated_at": "2026-03-03T10:30:00Z"
+}
+```
+
+### Performance Report
+
+```bash
+curl http://localhost:8080/api/v1/telegram/internal/performance?chat_id=123456789
+```
+
+**Response:**
+
+```json
+{
+  "total_trades": 42,
+  "win_rate": 65.5,
+  "profit_factor": 1.8,
+  "pnl_24h": "+125.50 USDT",
+  "pnl_24h_percent": 1.26,
+  "pnl_7d": "+890.00 USDT",
+  "pnl_7d_percent": 9.12,
+  "pnl_30d": "+3,245.00 USDT",
+  "pnl_30d_percent": 48.2,
+  "best_trade": "+89.50 USDT",
+  "worst_trade": "-32.00 USDT",
+  "avg_trade_duration": "4h 15m",
+  "updated_at": "2026-03-03T10:30:00Z"
+}
+```
+
+### Risk Metrics
+
+```bash
+curl http://localhost:8080/api/v1/risk/metrics
+```
+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T10:30:00Z",
+  "metrics": {
+    "system_risk": 15,
+    "exchange_risk": 5,
+    "liquidity_risk": 3,
+    "volatility_risk": 5,
+    "operational_risk": 2,
+    "active_exchanges": 6,
+    "failed_exchanges": 0,
+    "last_risk_update": "2026-03-03T10:30:00Z"
+  }
+}
+```
+
+**Risk Scores (0-20 per category, 0-100 total):**
+- `0-25` - Low risk (healthy)
+- `26-50` - Moderate risk (caution)
+- `51-75` - High risk (reduce exposure)
+- `76-100` - Critical risk (emergency stop)
+
+**Implementation:** `services/backend-api/internal/api/handlers/health.go:439`
+
+## Monitoring Best Practices
+
+### Production Monitoring Setup
+
+<Steps>
+  <Step title="Configure health checks">
+    Set up automated health monitoring:
+    
+    ```bash cron
+    # Check health every minute
+    * * * * * curl -sf http://localhost:8080/health || systemctl restart neuratrade
+    ```
+  </Step>
+
+  <Step title="Set up log aggregation">
+    Use tools like ELK stack, Loki, or CloudWatch for centralized logging:
+    
+    ```yaml docker-compose.yml
+    version: '3'
+    services:
+      loki:
+        image: grafana/loki:latest
+        ports:
+          - "3100:3100"
+        volumes:
+          - ./loki-config.yaml:/etc/loki/local-config.yaml
+    ```
+  </Step>
+
+  <Step title="Configure alerting">
+    Set up alerts for critical conditions:
+    - Service down > 1 minute
+    - Database connection failures
+    - Redis unavailable
+    - Exchange connectivity issues
+    - Risk score > 75
+  </Step>
+
+  <Step title="Monitor cache performance">
+    Track cache hit rates and adjust TTL values:
+    
+    ```bash
+    # Daily cache report
+    0 0 * * * curl http://localhost:8080/health | jq '.cache_metrics' >> /var/log/neuratrade/cache-metrics.log
+    ```
+  </Step>
+</Steps>
+
+### Prometheus Integration
+
+Expose metrics for Prometheus scraping:
+
+```go
+// Future implementation
+http.Handle("/metrics", promhttp.Handler())
+```
+
+Example metrics to track:
+- `neuratrade_requests_total` - Total API requests
+- `neuratrade_request_duration_seconds` - Request latency
+- `neuratrade_cache_hit_rate` - Cache hit percentage
+- `neuratrade_trades_total` - Total trades executed
+- `neuratrade_pnl_dollars` - Current PnL
+
+### Grafana Dashboards
+
+Create dashboards for:
+- System health (all services)
+- Trading performance (PnL, win rate)
+- Cache metrics (hit rate, evictions)
+- Exchange connectivity
+- Risk scores
+
+## Troubleshooting with Monitoring
+
+### High Response Times
+
+1. **Check cache hit rate:**
+   ```bash
+   curl http://localhost:8080/health | jq '.cache_metrics.hit_rate'
+   ```
+   
+   If < 60%, increase TTL or cache size.
+
+2. **Check database query times:**
+   ```bash
+   grep "SQL query" ~/.neuratrade/logs/backend.log | tail -20
+   ```
+   
+   Look for slow queries (> 100ms).
+
+3. **Check Redis latency:**
+   ```bash
+   redis-cli --latency
+   ```
+
+### Memory Issues
+
+1. **Check cache size:**
+   ```bash
+   curl http://localhost:8080/health | jq '.cache_stats'
+   ```
+
+2. **Monitor Redis memory:**
+   ```bash
+   redis-cli INFO memory
+   ```
+
+3. **Check process memory:**
+   ```bash
+   ps aux | grep neuratrade-server
+   ```
+
+### Connection Failures
+
+1. **Verify service status:**
+   ```bash
+   neuratrade gateway status
+   ```
+
+2. **Check logs for errors:**
+   ```bash
+   tail -100 ~/.neuratrade/logs/backend.log | grep ERROR
+   ```
+
+3. **Test connectivity:**
+   ```bash
+   curl http://localhost:8080/health
+   curl http://localhost:3001/health
+   curl http://localhost:3002/health
+   ```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Native Deployment" icon="server" href="/guides/native-deployment">
+    Deploy NeuraTrade natively
+  </Card>
+  
+  <Card title="Gateway CLI" icon="terminal" href="/guides/gateway-cli">
+    Service orchestration commands
+  </Card>
+  
+  <Card title="Telegram Setup" icon="telegram" href="/guides/telegram-setup">
+    Configure Telegram bot
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore health endpoints
+  </Card>
+</CardGroup>

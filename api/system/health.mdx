@@ -1,0 +1,317 @@
+---
+title: 'Health Check Endpoints'
+description: 'System health monitoring and status endpoints'
+---
+
+## Overview
+
+Health check endpoints provide visibility into system status and service dependencies. These endpoints are used by load balancers, orchestrators (Kubernetes), and monitoring tools to determine service readiness and liveness.
+
+## GET /health
+
+Comprehensive health check covering all system dependencies.
+
+### Request
+
+```bash
+curl http://localhost:3000/health
+```
+
+### Response
+
+<ResponseField name="status" type="string" required>
+  Overall system health status: `healthy`, `degraded`, or `unhealthy`
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp when the health check was performed
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Application version from `APP_VERSION` environment variable
+</ResponseField>
+
+<ResponseField name="uptime" type="string" required>
+  Service uptime duration (e.g., `2h15m30s`)
+</ResponseField>
+
+<ResponseField name="services" type="object" required>
+  Health status of individual services
+  
+  <Expandable title="services">
+    <ResponseField name="database" type="string" required>
+      Database connection status: `healthy`, `unhealthy: <error>`, or `unhealthy: not configured`
+    </ResponseField>
+    
+    <ResponseField name="redis" type="string" required>
+      Redis cache connection status: `healthy`, `unhealthy: <error>`, or `unhealthy: not configured`
+    </ResponseField>
+    
+    <ResponseField name="ccxt" type="string" required>
+      CCXT exchange service status: `healthy`, `unhealthy: <error>`, or embedded if running in native mode
+    </ResponseField>
+    
+    <ResponseField name="telegram" type="string" required>
+      Telegram bot configuration status: `healthy` if `TELEGRAM_BOT_TOKEN` is set, otherwise `unhealthy: TELEGRAM_BOT_TOKEN not set`
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cache_metrics" type="object">
+  Detailed cache performance metrics (optional)
+  
+  <Expandable title="cache_metrics">
+    <ResponseField name="overall" type="object">
+      Aggregated cache statistics across all categories
+    </ResponseField>
+    
+    <ResponseField name="by_category" type="object">
+      Cache stats grouped by category (e.g., `market_data`, `funding_rates`, `exchanges`)
+    </ResponseField>
+    
+    <ResponseField name="redis_info" type="object">
+      Raw Redis INFO command output with memory, clients, and keyspace sections
+    </ResponseField>
+    
+    <ResponseField name="memory_usage_bytes" type="integer">
+      Redis memory usage in bytes
+    </ResponseField>
+    
+    <ResponseField name="connected_clients" type="integer">
+      Number of connected Redis clients
+    </ResponseField>
+    
+    <ResponseField name="key_count" type="integer">
+      Total number of keys in Redis
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="cache_stats" type="object">
+  Cache hit/miss statistics by category (optional)
+  
+  <Expandable title="cache_stats">
+    <ResponseField name="[category]" type="object">
+      Stats for a specific cache category
+      
+      <Expandable title="category stats">
+        <ResponseField name="hits" type="integer">
+          Number of cache hits
+        </ResponseField>
+        
+        <ResponseField name="misses" type="integer">
+          Number of cache misses
+        </ResponseField>
+        
+        <ResponseField name="hit_rate" type="number">
+          Cache hit rate (0.0 to 1.0)
+        </ResponseField>
+        
+        <ResponseField name="total_ops" type="integer">
+          Total cache operations
+        </ResponseField>
+        
+        <ResponseField name="last_updated" type="string">
+          ISO 8601 timestamp of last update
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Response Codes
+
+- **200 OK**: Service is healthy or degraded (non-critical services unavailable)
+- **503 Service Unavailable**: Critical services (database) are unhealthy
+
+<Note>
+The `/health` endpoint returns 503 only when critical services like the database are down. Non-critical service failures (CCXT, Telegram) result in a `degraded` status with 200 OK, allowing the service to remain available for read-only operations.
+</Note>
+
+### Example Response
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T14:32:10Z",
+  "version": "1.2.0",
+  "uptime": "2h15m30s",
+  "services": {
+    "database": "healthy",
+    "redis": "healthy",
+    "ccxt": "healthy",
+    "telegram": "healthy"
+  },
+  "cache_metrics": {
+    "overall": {
+      "hits": 15420,
+      "misses": 1230,
+      "hit_rate": 0.926,
+      "total_ops": 16650,
+      "last_updated": "2026-03-03T14:32:10Z"
+    },
+    "memory_usage_bytes": 45678912,
+    "connected_clients": 12,
+    "key_count": 3456
+  }
+}
+```
+
+---
+
+## GET /ready
+
+Kubernetes-style readiness check for determining if the service can accept traffic.
+
+### Request
+
+```bash
+curl http://localhost:3000/ready
+```
+
+### Response
+
+<ResponseField name="ready" type="boolean" required>
+  `true` if all critical services are ready, `false` otherwise
+</ResponseField>
+
+<ResponseField name="services" type="object" required>
+  Readiness status of each service
+  
+  <Expandable title="services">
+    <ResponseField name="database" type="string">
+      `ready`, `not ready`, or `not configured`
+    </ResponseField>
+    
+    <ResponseField name="redis" type="string">
+      `ready`, `not ready`, or `not configured`
+    </ResponseField>
+    
+    <ResponseField name="ccxt" type="string">
+      `ready` or `degraded` (CCXT unavailability doesn't block readiness)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Response Codes
+
+- **200 OK**: Service is ready to accept traffic
+- **503 Service Unavailable**: Critical dependencies are not ready
+
+<Warning>
+The `/ready` endpoint is strict: it returns 503 if either the database or Redis is unavailable. Use this endpoint in Kubernetes readiness probes to prevent traffic from reaching unhealthy pods.
+</Warning>
+
+### Example Response
+
+```json
+{
+  "ready": true,
+  "services": {
+    "database": "ready",
+    "redis": "ready",
+    "ccxt": "ready"
+  }
+}
+```
+
+---
+
+## GET /live
+
+Lightweight liveness check to confirm the process is responsive.
+
+### Request
+
+```bash
+curl http://localhost:3000/live
+```
+
+### Response
+
+<ResponseField name="status" type="string" required>
+  Always returns `alive` if the service is running
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp when the liveness check was performed
+</ResponseField>
+
+### Response Codes
+
+- **200 OK**: Process is alive and responsive
+
+<Note>
+The `/live` endpoint performs minimal work and does not check dependencies. Use this in Kubernetes liveness probes to detect completely deadlocked processes that need restart.
+</Note>
+
+### Example Response
+
+```json
+{
+  "status": "alive",
+  "timestamp": "2026-03-03T14:32:10Z"
+}
+```
+
+---
+
+## HEAD /health
+
+Identical to `GET /health` but returns only headers (no response body). Useful for lightweight polling.
+
+```bash
+curl -I http://localhost:3000/health
+```
+
+---
+
+## Health Check Strategy
+
+### Kubernetes Configuration
+
+Recommended probe configuration for NeuraTrade deployment:
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /live
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 3000
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 2
+```
+
+### Load Balancer Configuration
+
+For cloud load balancers (AWS ALB, GCP LB), configure health checks:
+
+- **Path**: `/health`
+- **Interval**: 30 seconds
+- **Timeout**: 5 seconds
+- **Healthy Threshold**: 2 consecutive successes
+- **Unhealthy Threshold**: 3 consecutive failures
+
+### Monitoring Integration
+
+Health endpoints emit Sentry telemetry spans for observability:
+
+- `health_check` - Full health check with dependency status tags
+- `readiness_check` - Readiness probe with service availability tags  
+- `liveness_check` - Lightweight liveness verification
+
+Each span includes:
+- HTTP method and URL tags
+- Service status tags (`database.status`, `redis.status`, `ccxt.status`)
+- Overall status tags (`overall.status`, `database.readiness`)
+- Error capture for failed dependency checks

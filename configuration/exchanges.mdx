@@ -1,0 +1,425 @@
+---
+title: 'Exchange Configuration'
+description: 'Configure cryptocurrency exchanges using CCXT integration'
+---
+
+## Overview
+
+NeuraTrade uses [CCXT](https://github.com/ccxt/ccxt) to connect to cryptocurrency exchanges. The platform supports both HTTP and gRPC protocols for exchange communication, with automatic fallback.
+
+## Supported Exchanges
+
+NeuraTrade supports all CCXT-compatible exchanges. Popular exchanges include:
+
+- Binance
+- Coinbase/Coinbase Pro
+- Kraken
+- OKX
+- Bitget
+- Bybit
+- And 100+ more via CCXT
+
+Check the current list:
+
+```bash
+curl http://localhost:58080/api/v1/exchanges/supported
+```
+
+## Exchange Service Configuration
+
+### Service URL
+
+<ParamField path="CCXT_SERVICE_URL" type="string" default="http://localhost:3001">
+  URL for the CCXT exchange integration service.
+  
+  The CCXT service runs as a separate TypeScript/Bun microservice that provides exchange connectivity.
+</ParamField>
+
+<ParamField path="CCXT_TIMEOUT" type="duration" default="30s">
+  Timeout for CCXT service requests.
+  
+  Increase this value for slower exchanges or high-latency connections.
+</ParamField>
+
+### gRPC Configuration
+
+NeuraTrade supports both HTTP and gRPC communication with the CCXT service:
+
+- **HTTP**: REST API (fallback mode)
+- **gRPC**: High-performance binary protocol (preferred)
+
+```go
+// Automatic fallback from gRPC to HTTP
+if c.IsGRPCEnabled() {
+    resp, err := c.grpcClient.GetTicker(ctx, &pb.GetTickerRequest{
+        Exchange: exchange,
+        Symbol:   symbol,
+    })
+    if err == nil {
+        return resp, nil
+    }
+    // Falls back to HTTP automatically
+}
+```
+
+## API Key Setup
+
+### Runtime Configuration
+
+Store exchange API keys in `~/.neuratrade/config.json`:
+
+```json config.json
+{
+  "ccxt": {
+    "exchanges": {
+      "bitget": {
+        "api_key": "your_api_key_here",
+        "secret": "your_secret_here",
+        "passphrase": "your_passphrase_here"
+      },
+      "binance": {
+        "api_key": "your_binance_key",
+        "secret": "your_binance_secret"
+      }
+    }
+  }
+}
+```
+
+<Warning>
+  API keys stored in this file are AES-256-GCM encrypted. Never share your config.json file.
+</Warning>
+
+### Environment Variables (Optional)
+
+You can override config.json settings with environment variables:
+
+```bash
+BITGET_API_KEY=your_api_key
+BITGET_SECRET=your_secret
+BITGET_PASSPHRASE=your_passphrase
+```
+
+## Required Permissions
+
+### Minimum Permissions (Read-Only)
+
+<Accordion title="View-Only Trading">
+  For market data and paper trading:
+  
+  - ✅ Read Market Data
+  - ✅ Read Account Balances
+  - ✅ Read Open Orders
+  - ✅ Read Trade History
+  - ❌ Trading (disabled)
+  - ❌ Withdrawals (disabled)
+</Accordion>
+
+### Live Trading Permissions
+
+<Accordion title="Live Trading Requirements">
+  For autonomous trading:
+  
+  - ✅ Read Market Data
+  - ✅ Read Account Balances
+  - ✅ Read Open Orders
+  - ✅ Read Trade History
+  - ✅ **Spot Trading**
+  - ✅ **Futures Trading** (if using futures strategies)
+  - ❌ Withdrawals (recommended to disable)
+  - ❌ Sub-account transfers (recommended to disable)
+  
+  <Warning>
+    Never enable withdrawal permissions. Use IP whitelisting when available.
+  </Warning>
+</Accordion>
+
+## Exchange-Specific Setup
+
+### Binance
+
+```bash
+# 1. Create API key at https://www.binance.com/en/my/settings/api-management
+# 2. Enable "Enable Spot & Margin Trading"
+# 3. (Optional) Enable "Enable Futures" for futures arbitrage
+# 4. Add IP restrictions
+```
+
+<CodeGroup>
+```json config.json
+{
+  "ccxt": {
+    "exchanges": {
+      "binance": {
+        "api_key": "YOUR_BINANCE_API_KEY",
+        "secret": "YOUR_BINANCE_SECRET"
+      }
+    }
+  }
+}
+```
+
+```bash Environment Variables
+BINANCE_API_KEY=YOUR_BINANCE_API_KEY
+BINANCE_SECRET=YOUR_BINANCE_SECRET
+```
+</CodeGroup>
+
+### Bitget
+
+```bash
+# 1. Create API key at https://www.bitget.com/en/account/newapi
+# 2. Enable "Spot Trading" and "Futures Trading"
+# 3. Set passphrase
+# 4. Add IP restrictions
+```
+
+<CodeGroup>
+```json config.json
+{
+  "ccxt": {
+    "exchanges": {
+      "bitget": {
+        "api_key": "YOUR_BITGET_API_KEY",
+        "secret": "YOUR_BITGET_SECRET",
+        "passphrase": "YOUR_BITGET_PASSPHRASE"
+      }
+    }
+  }
+}
+```
+
+```bash Environment Variables
+BITGET_API_KEY=YOUR_BITGET_API_KEY
+BITGET_SECRET=YOUR_BITGET_SECRET
+BITGET_PASSPHRASE=YOUR_BITGET_PASSPHRASE
+```
+</CodeGroup>
+
+### OKX
+
+<Accordion title="OKX Configuration">
+  OKX requires API keys with passphrase authentication.
+  
+  1. Create API at https://www.okx.com/account/my-api
+  2. Enable "Trade" permission
+  3. Set a strong passphrase
+  4. Use IP whitelisting
+  
+  ```json
+  {
+    "ccxt": {
+      "exchanges": {
+        "okx": {
+          "api_key": "YOUR_OKX_API_KEY",
+          "secret": "YOUR_OKX_SECRET",
+          "passphrase": "YOUR_OKX_PASSPHRASE"
+        }
+      }
+    }
+  }
+  ```
+</Accordion>
+
+### Kraken
+
+<Accordion title="Kraken Configuration">
+  Kraken uses API keys with custom permission sets.
+  
+  1. Create API at https://www.kraken.com/u/security/api
+  2. Enable "Query Funds", "Query Open Orders & Trades", "Create & Modify Orders"
+  3. Add API key description
+  
+  ```json
+  {
+    "ccxt": {
+      "exchanges": {
+        "kraken": {
+          "api_key": "YOUR_KRAKEN_API_KEY",
+          "secret": "YOUR_KRAKEN_SECRET"
+        }
+      }
+    }
+  }
+  ```
+</Accordion>
+
+## Exchange Management API
+
+### Get Exchange Configuration
+
+```bash
+curl http://localhost:58080/api/v1/exchanges/config
+```
+
+```json Response
+{
+  "exchanges": [
+    "binance",
+    "bitget",
+    "okx"
+  ],
+  "blacklisted": [],
+  "initialized": true
+}
+```
+
+### Add Exchange
+
+```bash
+curl -X POST http://localhost:58080/api/v1/admin/exchanges/add/bybit \
+  -H "X-API-Key: your_admin_api_key"
+```
+
+### Blacklist Exchange
+
+Temporarily disable an exchange:
+
+```bash
+curl -X POST http://localhost:58080/api/v1/admin/exchanges/blacklist/binance \
+  -H "X-API-Key: your_admin_api_key"
+```
+
+### Remove from Blacklist
+
+```bash
+curl -X DELETE http://localhost:58080/api/v1/admin/exchanges/blacklist/binance \
+  -H "X-API-Key: your_admin_api_key"
+```
+
+### Refresh Exchanges
+
+Re-initialize all non-blacklisted exchanges:
+
+```bash
+curl -X POST http://localhost:58080/api/v1/admin/exchanges/refresh \
+  -H "X-API-Key: your_admin_api_key"
+```
+
+## Symbol Format Handling
+
+NeuraTrade automatically converts symbol formats for different exchanges:
+
+```go
+// Format conversion examples:
+// Binance:      BTC/USDT → BTCUSDT
+// Kraken:       BTC/USDT → BTC%2FUSDT (URL encoded)
+// Coinbase:     BTC/USDT → BTC-USDT
+// Default:      BTC/USDT → BTC/USDT
+```
+
+## Error Handling
+
+### Symbol Not Found
+
+```json
+{
+  "error": "symbol BTC/INVALID not found on binance: market not found",
+  "retryable": false
+}
+```
+
+### Exchange Unavailable
+
+```json
+{
+  "error": "exchange binance unavailable: connection timeout",
+  "retryable": true
+}
+```
+
+### Unsupported Operation
+
+```json
+{
+  "error": "exchange kraken does not support funding-rate: operation not implemented",
+  "retryable": false
+}
+```
+
+## Rate Limiting
+
+NeuraTrade respects exchange rate limits:
+
+- Automatic retry with exponential backoff
+- Per-exchange rate limit tracking
+- Fallback to alternate exchanges when available
+
+<Warning>
+  Exceeding rate limits may result in temporary IP bans. Use appropriate request intervals.
+</Warning>
+
+## Health Checks
+
+### Exchange Connectivity
+
+```bash
+curl http://localhost:58080/health
+```
+
+```json
+{
+  "status": "ok",
+  "services": {
+    "ccxt": "up",
+    "database": "up",
+    "redis": "up"
+  },
+  "exchanges": {
+    "available": 15,
+    "initialized": 12,
+    "failed": 3
+  }
+}
+```
+
+## Security Best Practices
+
+1. **API Key Isolation**: Create separate API keys for NeuraTrade
+2. **IP Whitelisting**: Restrict API access to your server IPs
+3. **Minimal Permissions**: Only enable required permissions
+4. **Disable Withdrawals**: Never enable withdrawal permissions
+5. **Monitor Usage**: Track API key activity on exchange dashboards
+6. **Rotate Keys**: Regularly update API keys (quarterly recommended)
+7. **Separate Funds**: Use sub-accounts or separate wallets for trading
+
+## Troubleshooting
+
+### Connection Issues
+
+<Accordion title="CCXT Service Not Reachable">
+  ```bash
+  # Check service status
+  curl http://localhost:3001/health
+  
+  # Verify CCXT_SERVICE_URL
+  echo $CCXT_SERVICE_URL
+  
+  # Check service logs
+  docker logs ccxt-service
+  ```
+</Accordion>
+
+<Accordion title="Authentication Errors">
+  ```bash
+  # Verify API keys are set
+  cat ~/.neuratrade/config.json | jq '.ccxt.exchanges'
+  
+  # Test with curl
+  curl -X GET http://localhost:58080/api/v1/exchanges/config
+  
+  # Check permissions on exchange dashboard
+  ```
+</Accordion>
+
+### Performance Optimization
+
+1. **Enable gRPC**: Faster than HTTP for high-frequency requests
+2. **Batch Requests**: Use bulk ticker/market endpoints
+3. **Cache Results**: Use Redis caching for market data
+4. **Connection Pooling**: Reuse HTTP connections
+
+```bash
+# Monitor cache performance
+curl http://localhost:58080/api/v1/cache/stats/market
+```

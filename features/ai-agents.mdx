@@ -1,0 +1,487 @@
+---
+title: 'AI Agents'
+description: 'Multi-agent trading system with Analyst, Trader, and Risk Manager roles'
+icon: 'brain'
+---
+
+## Overview
+
+NeuraTrade employs a **multi-agent architecture** where specialized AI agents collaborate to analyze markets, generate trading decisions, and manage risk. Each agent has a distinct role and operates with its own configuration and metrics.
+
+## Agent Roles
+
+<CardGroup cols={3}>
+  <Card title="Analyst Agent" icon="chart-line">
+    **Technical analysis** and market condition assessment. Processes signals, generates recommendations, and calculates confidence scores.
+  </Card>
+  <Card title="Trader Agent" icon="robot">
+    **Trading decisions** based on analyst input and portfolio state. Determines entry/exit signals, position sizing, and order parameters.
+  </Card>
+  <Card title="Risk Manager Agent" icon="shield">
+    **Risk evaluation** and approval gating. Assesses portfolio risk, position risk, and emergency conditions before execution.
+  </Card>
+</CardGroup>
+
+## Analyst Agent
+
+The Analyst Agent processes market signals and generates trading recommendations with confidence scores.
+
+### Agent Roles
+
+<Tabs>
+  <Tab title="Technical">
+    Analyzes price action, indicators (RSI, MACD, Bollinger Bands), and chart patterns.
+    
+    ```go services/backend-api/internal/services/analyst_agent.go:10-17
+    type AnalystRole string
+    
+    const (
+        AnalystRoleTechnical   AnalystRole = "technical"
+        AnalystRoleSentiment   AnalystRole = "sentiment"
+        AnalystRoleOnChain     AnalystRole = "onchain"
+        AnalystRoleFundamental AnalystRole = "fundamental"
+    )
+    ```
+  </Tab>
+  <Tab title="Sentiment">
+    Analyzes social media sentiment, news sentiment, and market psychology indicators.
+  </Tab>
+  <Tab title="On-Chain">
+    Analyzes blockchain metrics: whale movements, exchange flows, UTXO age, network activity.
+  </Tab>
+  <Tab title="Fundamental">
+    Analyzes project fundamentals: tokenomics, team, partnerships, development activity.
+  </Tab>
+</Tabs>
+
+### Analysis Process
+
+```go services/backend-api/internal/services/analyst_agent.go:176-234
+func (a *AnalystAgent) Analyze(
+    ctx context.Context,
+    symbol string,
+    role AnalystRole,
+    signals []AnalystSignal,
+) (*AnalystAnalysis, error) {
+    analysis := &AnalystAnalysis{
+        ID:         generateAnalystID(),
+        Symbol:     symbol,
+        Role:       role,
+        Signals:    signals,
+        AnalyzedAt: time.Now().UTC(),
+    }
+    
+    // Calculate weighted score from signals
+    weightedScore := 0.0
+    totalWeight := 0.0
+    bullishCount := 0
+    bearishCount := 0
+    
+    for _, signal := range signals {
+        weightedScore += signal.Value * signal.Weight
+        totalWeight += signal.Weight
+        
+        if signal.Direction == "bullish" {
+            bullishCount++
+        } else if signal.Direction == "bearish" {
+            bearishCount++
+        }
+    }
+    
+    analysis.Score = weightedScore / totalWeight
+    analysis.Confidence = calculateConfidence(signals, analysis.Score)
+    
+    // Generate recommendation
+    if bullishCount > bearishCount && analysis.Score > threshold {
+        analysis.Recommendation = RecommendationBuy
+    } else if bearishCount > bullishCount && analysis.Score < -threshold {
+        analysis.Recommendation = RecommendationSell
+    } else {
+        analysis.Recommendation = RecommendationHold
+    }
+    
+    return analysis, nil
+}
+```
+
+### Signal Structure
+
+```go services/backend-api/internal/services/analyst_agent.go:62-68
+type AnalystSignal struct {
+    Name        string          // Signal name (e.g., "rsi", "macd")
+    Value       float64         // Signal value (0.0-1.0 normalized)
+    Weight      float64         // Signal importance (0.0-1.0)
+    Direction   SignalDirection // "bullish", "bearish", "neutral"
+    Description string          // Human-readable description
+}
+```
+
+<Info>
+**Confidence Calculation**: Confidence is derived from signal agreement (how many signals point the same direction) and score magnitude.
+</Info>
+
+### Recommendations
+
+<Tabs>
+  <Tab title="Buy">
+    Bullish signals dominate and weighted score exceeds threshold.
+  </Tab>
+  <Tab title="Sell">
+    Bearish signals dominate and weighted score falls below negative threshold.
+  </Tab>
+  <Tab title="Hold">
+    Mixed signals or score within neutral range.
+  </Tab>
+  <Tab title="Watch">
+    Confidence below minimum threshold—insufficient conviction to act.
+  </Tab>
+  <Tab title="Avoid">
+    High risk detected or adverse market conditions.
+  </Tab>
+</Tabs>
+
+## Risk Manager Agent
+
+The Risk Manager Agent evaluates every trading decision against portfolio and position risk limits.
+
+### Risk Assessment Roles
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:14-21
+type RiskManagerRole string
+
+const (
+    RiskManagerRolePortfolio RiskManagerRole = "portfolio"
+    RiskManagerRolePosition  RiskManagerRole = "position"
+    RiskManagerRoleTrading   RiskManagerRole = "trading"
+    RiskManagerRoleEmergency RiskManagerRole = "emergency"
+)
+```
+
+### Risk Actions
+
+<CardGroup cols={3}>
+  <Card title="Approve" icon="check">
+    **Low risk** - Trade approved without modifications
+  </Card>
+  <Card title="Warning" icon="exclamation">
+    **Medium risk** - Trade approved with caution flag
+  </Card>
+  <Card title="Reduce" icon="arrow-down">
+    **High risk** - Reduce position size to acceptable level
+  </Card>
+  <Card title="Block" icon="ban">
+    **Extreme risk** - Reject trade entirely
+  </Card>
+  <Card title="Close" icon="xmark">
+    **Emergency** - Close existing positions immediately
+  </Card>
+  <Card title="Emergency" icon="siren">
+    **Critical** - Halt all trading and trigger emergency shutdown
+  </Card>
+</CardGroup>
+
+### Portfolio Risk Assessment
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:202-244
+func (a *RiskManagerAgent) AssessPortfolioRisk(
+    _ context.Context,
+    signals []RiskSignal,
+) (*RiskAssessment, error) {
+    assessment := &RiskAssessment{
+        ID:              generateRiskID(),
+        Role:            RiskManagerRolePortfolio,
+        AssessedAt:      time.Now(),
+        Reasons:         []string{},
+        Recommendations: []string{},
+    }
+    
+    score := calculateRiskScore(signals)
+    assessment.Score = score
+    assessment.Confidence = calculateRiskConfidence(signals)
+    assessment.RiskLevel = determineRiskLevel(score)
+    assessment.Action = determineAction(assessment.RiskLevel, score, a.config)
+    
+    // Generate reasons for high-risk signals
+    for _, signal := range signals {
+        if signal.Value > signal.Threshold {
+            assessment.Reasons = append(assessment.Reasons, signal.Description)
+        }
+    }
+    
+    // Generate recommendations
+    switch assessment.RiskLevel {
+    case RiskLevelLow:
+        assessment.Recommendations = append(assessment.Recommendations,
+            "Portfolio risk is within acceptable limits")
+    case RiskLevelMedium:
+        assessment.Recommendations = append(assessment.Recommendations,
+            "Consider reducing position sizes", "Monitor portfolio closely")
+    case RiskLevelHigh:
+        assessment.Recommendations = append(assessment.Recommendations,
+            "Reduce exposure immediately", "Avoid new positions")
+    case RiskLevelExtreme:
+        assessment.Recommendations = append(assessment.Recommendations,
+            "EMERGENCY: Close positions", "Halt all trading activity")
+    }
+    
+    return assessment, nil
+}
+```
+
+### Risk Signal Structure
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:64-70
+type RiskSignal struct {
+    Name        string  // Signal name (e.g., "volatility", "drawdown")
+    Value       float64 // Current value
+    Weight      float64 // Importance weight (0.0-1.0)
+    Threshold   float64 // Alert threshold
+    Description string  // Human-readable description
+}
+```
+
+<Warning>
+**Emergency Conditions**: When drawdown exceeds emergency threshold or daily loss cap is hit, the risk manager triggers an immediate halt.
+</Warning>
+
+### Emergency Condition Check
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:371-422
+func (a *RiskManagerAgent) CheckEmergencyConditions(
+    _ context.Context,
+    currentDrawdown float64,
+    dailyLoss decimal.Decimal,
+) (*RiskAssessment, error) {
+    isEmergency := false
+    
+    // Check drawdown threshold
+    if currentDrawdown >= a.config.EmergencyThreshold {
+        assessment.Reasons = append(assessment.Reasons,
+            fmt.Sprintf("Drawdown %.2f%% exceeds emergency threshold %.2f%%",
+                currentDrawdown*100, a.config.EmergencyThreshold*100))
+        isEmergency = true
+    }
+    
+    // Check daily loss cap
+    if dailyLoss.GreaterThanOrEqual(a.config.MaxDailyLoss) {
+        assessment.Reasons = append(assessment.Reasons,
+            fmt.Sprintf("Daily loss %s exceeds maximum %s",
+                dailyLoss.String(), a.config.MaxDailyLoss.String()))
+        isEmergency = true
+    }
+    
+    if isEmergency {
+        assessment.Action = RiskActionEmergency
+        assessment.RiskLevel = RiskLevelExtreme
+        assessment.Recommendations = append(assessment.Recommendations,
+            "EMERGENCY: All positions should be closed immediately",
+            "Halt all trading activity",
+            "Review strategy before resuming")
+    }
+    
+    return assessment, nil
+}
+```
+
+## AI Provider Registry
+
+NeuraTrade supports multiple AI providers with automatic failover:
+
+<Tabs>
+  <Tab title="OpenAI">
+    GPT-4, GPT-4 Turbo, GPT-3.5 Turbo
+  </Tab>
+  <Tab title="Anthropic">
+    Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku
+  </Tab>
+  <Tab title="Google">
+    Gemini Pro, Gemini Ultra
+  </Tab>
+  <Tab title="models.dev">
+    Multi-model routing and cost optimization
+  </Tab>
+</Tabs>
+
+### Provider Configuration
+
+```yaml
+ai:
+  providers:
+    - name: openai
+      model: gpt-4
+      api_key: ${OPENAI_API_KEY}
+      priority: 1
+    - name: anthropic
+      model: claude-3-5-sonnet-20241022
+      api_key: ${ANTHROPIC_API_KEY}
+      priority: 2
+  failover:
+    enabled: true
+    max_retries: 3
+    backoff_ms: 1000
+```
+
+<Info>
+**Automatic Failover**: If the primary provider fails or times out, the system automatically falls back to the next provider in priority order.
+</Info>
+
+## Reasoning & Debate Loop
+
+The agent execution loop orchestrates a **reasoning and debate** process where agents collaborate:
+
+<Steps>
+  <Step title="Analyst Analysis">
+    Analyst agent processes market signals and generates recommendation with confidence score.
+  </Step>
+  <Step title="LLM Tool Calling" icon="tools">
+    Optional LLM step uses tool calling to gather additional context (order books, recent trades, news).
+  </Step>
+  <Step title="Trader Decision">
+    Trader agent generates trading decision (buy/sell/hold) based on analyst input and portfolio state.
+  </Step>
+  <Step title="Risk Evaluation">
+    Risk manager evaluates the proposed trade against risk limits and portfolio constraints.
+  </Step>
+  <Step title="Confidence Check">
+    Final confidence check ensures decision meets minimum threshold before execution.
+  </Step>
+  <Step title="Execution">
+    If approved, order is submitted to exchange (or simulated in paper trading mode).
+  </Step>
+</Steps>
+
+### Debate Flow
+
+```go services/backend-api/internal/services/agent_execution_loop.go:254-382
+func (l *AgentExecutionLoop) Execute(
+    ctx context.Context,
+    symbol string,
+    marketContext MarketContext,
+    portfolio PortfolioState,
+) (*ExecutionLoopResult, error) {
+    // Step 1: Analyst generates recommendation
+    analysis, _ := l.runAnalysis(ctx, symbol, marketContext)
+    
+    // Step 2: LLM enriches context with tool calls
+    if l.llmClient != nil && l.config.EnableToolCalls {
+        toolCalls, toolResults, _ := l.runLLMWithTools(ctx, symbol, analysis, marketContext)
+        result.ToolCallsMade = toolCalls
+    }
+    
+    // Step 3: Trader makes decision
+    tradingDecision, _ := l.traderAgent.MakeDecision(ctx, marketContext, portfolio)
+    
+    // Check if we should proceed (hold/wait)
+    if tradingDecision.Action == ActionHold || tradingDecision.Action == ActionWait {
+        result.Decision = ExecutionDecisionDefer
+        return result, nil
+    }
+    
+    // Step 4: Risk manager evaluates
+    if l.config.RequireRiskApproval {
+        riskAssessment, _ := l.riskManager.AssessTradingRisk(ctx, symbol, side, riskSignals)
+        
+        switch riskAssessment.Action {
+        case risk.RiskActionBlock, risk.RiskActionEmergency:
+            result.Decision = ExecutionDecisionReject
+            return result, nil
+        case risk.RiskActionReduce:
+            tradingDecision.SizePercent = adjustedSize
+        }
+    }
+    
+    // Step 5: Final confidence check
+    if result.Confidence < l.config.MinConfidence {
+        result.Decision = ExecutionDecisionReject
+        return result, nil
+    }
+    
+    // Step 6: Approve and execute
+    result.Decision = ExecutionDecisionApprove
+    if l.config.AutoExecute {
+        l.orderExecutor.ExecuteOrder(ctx, tradingDecision)
+    }
+    
+    return result, nil
+}
+```
+
+## Agent Metrics
+
+### Analyst Metrics
+
+```go services/backend-api/internal/services/analyst_agent.go:86-95
+type AnalystAgentMetrics struct {
+    TotalAnalyses    int64
+    BuySignals       int64
+    SellSignals      int64
+    HoldSignals      int64
+    AvgConfidence    float64
+    AnalysesBySymbol map[string]int64
+    AnalysesByRole   map[string]int64
+}
+```
+
+### Risk Manager Metrics
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:101-110
+type RiskManagerMetrics struct {
+    TotalAssessments    int64
+    ApprovedTrades      int64
+    BlockedTrades       int64
+    WarningsIssued      int64
+    EmergencyTriggers   int64
+    AssessmentsByRole   map[string]int64
+    AssessmentsBySymbol map[string]int64
+}
+```
+
+### Execution Loop Metrics
+
+```go services/backend-api/internal/services/agent_execution_loop.go:95-109
+type ExecutionLoopMetrics struct {
+    TotalCycles          int64
+    ApprovedExecutions   int64
+    RejectedExecutions   int64
+    DeferredExecutions   int64
+    EmergencyTriggers    int64
+    TotalToolCalls       int64
+    FailedToolCalls      int64
+    AverageIterations    float64
+    AverageExecutionTime float64
+    AverageConfidence    float64
+    DecisionsBySymbol    map[string]int64
+    DecisionsByAction    map[string]int64
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Tune Confidence Thresholds" icon="sliders">
+    Start with high minimum confidence (0.7+) and lower gradually as you validate strategy performance.
+  </Card>
+  <Card title="Monitor Agent Metrics" icon="chart-mixed">
+    Track approval/rejection rates. High rejection rates may indicate overly conservative risk limits.
+  </Card>
+  <Card title="Review Tool Call Results" icon="magnifying-glass">
+    Examine LLM tool call results to understand what context influenced decisions.
+  </Card>
+  <Card title="Test Agent Configurations" icon="flask">
+    Use paper trading to test different analyst weights, risk thresholds, and confidence levels.
+  </Card>
+</CardGroup>
+
+## Related Resources
+
+<CardGroup cols={3}>
+  <Card title="Autonomous Trading" href="/features/autonomous-trading" icon="robot">
+    Learn how agents integrate with the quest execution engine
+  </Card>
+  <Card title="Risk Management" href="/features/risk-management" icon="shield">
+    Deep dive into risk primitives and circuit breakers
+  </Card>
+  <Card title="Telegram Bot" href="/features/telegram-bot" icon="paper-plane">
+    Monitor agent decisions and metrics via Telegram
+  </Card>
+</CardGroup>

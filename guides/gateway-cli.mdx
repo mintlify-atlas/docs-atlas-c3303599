@@ -1,0 +1,714 @@
+---
+title: 'Gateway CLI Reference'
+description: 'Comprehensive guide to the neuratrade gateway CLI for service orchestration'
+icon: 'terminal'
+---
+
+# Gateway CLI Reference
+
+The `neuratrade` gateway CLI is your primary interface for managing NeuraTrade services. It orchestrates the backend API, CCXT service, and Telegram bot with intelligent process management and health monitoring.
+
+## Overview
+
+The gateway CLI provides:
+
+- **Unified service orchestration** - Start/stop all services with a single command
+- **Health monitoring** - Continuous service health checks with automatic state tracking
+- **Process management** - PID file-based process tracking with graceful shutdown
+- **Configuration management** - Environment variable resolution with config file fallbacks
+- **Supervised mode** - Keep services running during warmup phases
+
+## Architecture
+
+The gateway acts as a lightweight process supervisor:
+
+```
+┌─────────────────────────────────────┐
+│      neuratrade gateway CLI         │
+│   (Process Orchestrator)            │
+└──────────┬──────────────────────────┘
+           │
+    ┌──────┴──────┬────────────────┐
+    │             │                │
+┌───▼───┐   ┌────▼────┐     ┌─────▼──────┐
+│ CCXT  │   │ Backend │     │ Telegram   │
+│Service│   │   API   │     │  Service   │
+└───────┘   └─────────┘     └────────────┘
+    │             │                │
+    └─────────────┴────────────────┘
+              │
+       Health Monitoring
+      (every 15 seconds)
+```
+
+## Installation
+
+The `neuratrade` binary is built as part of the standard build process:
+
+```bash
+make build
+```
+
+For system-wide installation:
+
+```bash
+./install.sh
+```
+
+This installs to `~/.local/bin/neuratrade` (ensure this is in your PATH).
+
+## Gateway Commands
+
+### gateway start
+
+Starts all NeuraTrade services in the correct dependency order.
+
+```bash
+neuratrade gateway start [--supervised]
+```
+
+**Flags:**
+
+- `--supervised` - Enable supervised mode (keeps gateway running even if initial health checks fail)
+
+**Startup Sequence:**
+
+<Steps>
+  <Step title="Environment resolution">
+    Gateway reads configuration from:
+    1. Environment variables
+    2. `~/.neuratrade/config.json` 
+    3. Built-in defaults
+    
+    Port resolution order:
+    - `SERVER_PORT` → `PORT` → `BACKEND_HOST_PORT` → config.server.port → `8080`
+  </Step>
+
+  <Step title="Directory initialization">
+    Creates required directories:
+    ```bash
+    ~/.neuratrade/logs/     # Service logs
+    ~/.neuratrade/pids/     # Process ID files
+    ~/.neuratrade/data/     # SQLite database (if using SQLite)
+    ```
+  </Step>
+
+  <Step title="Gateway state creation">
+    Writes initial state to `~/.neuratrade/pids/gateway-state.json`:
+    ```json
+    {
+      "mode": "starting",
+      "supervised": false,
+      "updated_at": "2026-03-03T10:00:00Z",
+      "health_timeout_seconds": 90,
+      "services": {
+        "backend": {
+          "status": "starting",
+          "endpoint": "http://127.0.0.1:8080/health"
+        },
+        "telegram": {
+          "status": "starting",
+          "endpoint": "http://127.0.0.1:3002/health"
+        },
+        "ccxt": {
+          "status": "starting",
+          "endpoint": "http://127.0.0.1:3001/health"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Service startup">
+    Services start in this order:
+    
+    1. **CCXT Service** (port 3001, bound to 127.0.0.1)
+    2. **Backend API** (port 8080, bound to 0.0.0.0)
+    3. **Telegram Service** (port 3002, bound to 127.0.0.1)
+    
+    Each service:
+    - Logs to `~/.neuratrade/logs/<service>.log`
+    - Writes PID to `~/.neuratrade/pids/<service>.pid`
+    - Receives appropriate environment variables
+  </Step>
+
+  <Step title="Health verification">
+    After startup, gateway probes each service:
+    - Timeout: 90 seconds (configurable via `NEURATRADE_GATEWAY_HEALTH_TIMEOUT_SECONDS`)
+    - Probe interval: 500ms
+    - Success criteria: HTTP 200-499 response
+    
+    In supervised mode, unhealthy services are marked as "warming" instead of causing startup failure.
+  </Step>
+
+  <Step title="Health monitoring loop">
+    Gateway spawns a background goroutine that:
+    - Checks service health every 15 seconds
+    - Updates gateway state JSON
+    - Tracks overall mode: `healthy`, `degraded`, `warming`, or `down`
+  </Step>
+</Steps>
+
+**Example Output:**
+
+<CodeGroup>
+```bash Standard Mode
+🚀 Starting NeuraTrade Gateway...
+
+📁 NeuraTrade Home: /home/user/.neuratrade
+⚙️  Config File: /home/user/.neuratrade/config.json
+🌐 Backend Port: 8080 (public)
+🔌 CCXT Port: 3001 (internal, bound to 127.0.0.1)
+📞 Telegram Port: 3002 (internal, bound to 127.0.0.1)
+🛡️  Supervised Mode: false
+⏱️  Health Timeout: 1m30s
+
+📊 Starting CCXT Service...
+✅ CCXT Service started
+🔧 Starting Backend API...
+✅ Backend API started
+📞 Starting Telegram Service...
+✅ Telegram Service started
+
+🎉 All services started successfully!
+
+📡 Backend API: http://localhost:8080
+🏥 Health Check: http://localhost:8080/health
+
+Press Ctrl+C to stop all services
+```
+
+```bash Supervised Mode
+🚀 Starting NeuraTrade Gateway...
+
+📁 NeuraTrade Home: /home/user/.neuratrade
+⚙️  Config File: /home/user/.neuratrade/config.json
+🌐 Backend Port: 8080 (public)
+🔌 CCXT Port: 3001 (internal, bound to 127.0.0.1)
+📞 Telegram Port: 3002 (internal, bound to 127.0.0.1)
+🛡️  Supervised Mode: true
+⏱️  Health Timeout: 1m30s
+
+📊 Starting CCXT Service...
+✅ CCXT Service started
+🔧 Starting Backend API...
+⚠️  Backend API still warming: health probe timeout
+📞 Starting Telegram Service...
+✅ Telegram Service started
+
+⏳ Services started in warmup mode (supervised)
+
+📡 Backend API: http://localhost:8080
+🏥 Health Check: http://localhost:8080/health
+
+Press Ctrl+C to stop all services
+```
+</CodeGroup>
+
+<Note>
+Supervised mode is recommended for production deployments where services may take time to initialize (e.g., loading market data, connecting to exchanges).
+</Note>
+
+### gateway stop
+
+Stops all running NeuraTrade services gracefully.
+
+```bash
+neuratrade gateway stop
+```
+
+**Behavior:**
+
+<Steps>
+  <Step title="PID file resolution">
+    Reads PID files from `~/.neuratrade/pids/`:
+    - `backend.pid`
+    - `ccxt.pid`
+    - `telegram.pid`
+  </Step>
+
+  <Step title="Process validation">
+    For each PID:
+    1. Verifies process exists
+    2. Validates process matches expected pattern (e.g., `neuratrade-server`)
+    3. Removes stale PID files if process doesn't match
+  </Step>
+
+  <Step title="Graceful termination">
+    Sends SIGTERM to each process:
+    ```go
+    process.Signal(syscall.SIGTERM)
+    ```
+    
+    This allows services to:
+    - Flush logs
+    - Close database connections
+    - Complete in-flight requests
+    - Clean up resources
+  </Step>
+
+  <Step title="Cleanup">
+    Removes PID files after successful termination.
+  </Step>
+</Steps>
+
+**Example Output:**
+
+```bash
+🛑 Stopping NeuraTrade services...
+
+✅ Backend API: Stopped (PID: 12345)
+✅ CCXT Service: Stopped (PID: 12346)
+✅ Telegram Service: Stopped (PID: 12347)
+
+✅ Stopped 3 service(s)
+```
+
+**Process Pattern Matching:**
+
+The gateway validates PIDs against expected process patterns to prevent accidentally stopping unrelated processes:
+
+| Service | Expected Patterns |
+|---------|------------------|
+| Backend API | `neuratrade-server` |
+| CCXT Service | `ccxt-service` |
+| Telegram Service | `telegram-service`, `bun run index.ts` |
+
+<Warning>
+If no services are running or PID files are missing, the command suggests manual cleanup:
+
+```bash
+pkill -f neuratrade-server
+pkill -f ccxt-service
+pkill -f telegram-service
+```
+</Warning>
+
+### gateway status
+
+Displays the current status of all services with detailed health information.
+
+```bash
+neuratrade gateway status
+```
+
+**Output Sections:**
+
+<Steps>
+  <Step title="Runtime state">
+    Shows mode from `gateway-state.json`:
+    ```bash
+    Runtime Mode: HEALTHY
+    Last Update: 2026-03-03T10:30:00Z
+    Supervision: ENABLED
+    ```
+    
+    Possible modes:
+    - `healthy` - All services running and healthy
+    - `degraded` - Some services unhealthy but running
+    - `warming` - Services starting up
+    - `down` - All services stopped
+  </Step>
+
+  <Step title="Process status">
+    Checks running processes via `pgrep`:
+    ```bash
+    ✅ Backend API: Running (PID: 12345)
+    ✅ CCXT Service: Running (PID: 12346) 
+    ✅ Telegram Service: Running (PID: 12347)
+    ```
+    
+    Or if stopped:
+    ```bash
+    ❌ Backend API: Not running
+    ```
+  </Step>
+
+  <Step title="Health endpoint check">
+    Queries the backend `/health` endpoint:
+    ```bash
+    🚪 Health Check: http://127.0.0.1:8080/health
+    
+    ✅ Backend Status: healthy
+    
+    Service Health:
+      ✓ database: healthy
+      ✓ redis: healthy
+      ✓ ccxt: healthy
+      ✓ telegram: healthy
+    ```
+  </Step>
+</Steps>
+
+**Full Example Output:**
+
+```bash
+📊 NeuraTrade Service Status
+============================
+
+Runtime Mode: HEALTHY
+Last Update: 2026-03-03T10:30:00Z
+
+✅ Backend API: Running (PID: 12345)
+✅ CCXT Service: Running (PID: 12346)
+✅ Telegram Service: Running (PID: 12347)
+
+🚪 Health Check: http://127.0.0.1:8080/health
+
+✅ Backend Status: healthy
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ✓ ccxt: healthy
+  ✓ telegram: healthy
+```
+
+<Tip>
+Use `gateway status` in monitoring scripts or cron jobs to track service health over time.
+</Tip>
+
+## Process Management
+
+### PID Files
+
+The gateway uses PID files for robust process tracking:
+
+**Location:** `~/.neuratrade/pids/`
+
+**Files:**
+- `backend.pid` - Backend API process ID
+- `ccxt.pid` - CCXT service process ID  
+- `telegram.pid` - Telegram service process ID
+- `gateway-state.json` - Runtime state and health data
+
+**Format:**
+
+```bash
+# Example: backend.pid
+12345
+```
+
+### Gateway State JSON
+
+The gateway maintains a JSON state file for advanced monitoring:
+
+**Location:** `~/.neuratrade/pids/gateway-state.json`
+
+**Schema:**
+
+```json
+{
+  "mode": "healthy",
+  "supervised": true,
+  "updated_at": "2026-03-03T10:30:45Z",
+  "health_timeout_seconds": 90,
+  "services": {
+    "backend": {
+      "status": "healthy",
+      "detail": "Backend API reachable (200)",
+      "endpoint": "http://127.0.0.1:8080/health"
+    },
+    "telegram": {
+      "status": "healthy",
+      "detail": "Telegram Service reachable (200)",
+      "endpoint": "http://127.0.0.1:3002/health"
+    },
+    "ccxt": {
+      "status": "healthy",
+      "detail": "process started",
+      "endpoint": "http://127.0.0.1:3001/health"
+    }
+  }
+}
+```
+
+**Service Status Values:**
+- `starting` - Service process has been launched
+- `warming` - Service running but health check not passing yet
+- `healthy` - Service running and health check passing
+- `degraded` - Service running but returning errors
+- `down` - Service process not running
+
+### Health Monitoring
+
+The gateway runs a background health monitor when in foreground mode:
+
+**Monitoring Behavior:**
+- **Interval:** 15 seconds
+- **Checks:** Process existence + HTTP health probe
+- **Updates:** `gateway-state.json` after each check
+- **Mode derivation:**
+  - All services up + healthy → `healthy`
+  - All services down → `down`
+  - Services up but not healthy → `warming`
+  - Mixed state → `degraded`
+
+## Environment Variables
+
+The gateway respects these environment variables:
+
+### Core Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEURATRADE_HOME` | `~/.neuratrade` | Base directory for config/logs/data |
+| `PORT` | `8080` | Backend API port |
+| `SERVER_PORT` | - | Overrides PORT if set |
+| `BACKEND_HOST_PORT` | - | Overrides PORT if set |
+| `BIND_HOST` | `127.0.0.1` | Host binding for internal services |
+
+### Service Ports
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CCXT_PORT` | `3001` | CCXT service HTTP port |
+| `TELEGRAM_PORT` | `3002` | Telegram service HTTP port |
+| `CCXT_GRPC_PORT` | `50051` | CCXT gRPC port |
+| `TELEGRAM_GRPC_PORT` | `50052` | Telegram gRPC port |
+
+### Gateway Behavior
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NEURATRADE_GATEWAY_SUPERVISED` | `false` | Enable supervised mode |
+| `NEURATRADE_GATEWAY_HEALTH_TIMEOUT_SECONDS` | `90` | Health check timeout in seconds |
+
+### Service Configuration
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_DRIVER` | Database type (`sqlite`, `postgres`) |
+| `SQLITE_PATH` | SQLite database file path |
+| `REDIS_HOST` | Redis server host |
+| `REDIS_PORT` | Redis server port |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `TELEGRAM_USE_POLLING` | Use polling mode (`true`/`false`) |
+| `JWT_SECRET` | JWT signing secret (min 32 chars) |
+| `ADMIN_API_KEY` | Admin API key (min 32 chars) |
+| `AI_API_KEY` | AI provider API key |
+| `AI_PROVIDER` | AI provider name |
+| `AI_MODEL` | AI model identifier |
+
+<Note>
+The gateway automatically generates secure `JWT_SECRET` and `ADMIN_API_KEY` values if they're missing or too short (< 32 characters).
+</Note>
+
+## Signal Handling
+
+The gateway handles Unix signals gracefully:
+
+### SIGINT / SIGTERM
+
+When Ctrl+C is pressed or SIGTERM is received:
+
+<Steps>
+  <Step title="Stop health monitoring">
+    Closes the health monitor goroutine
+  </Step>
+
+  <Step title="Send SIGTERM to services">
+    Signals all child processes:
+    ```go
+    backendCmd.Process.Signal(syscall.SIGTERM)
+    telegramCmd.Process.Signal(syscall.SIGTERM)
+    ccxtCmd.Process.Signal(syscall.SIGTERM)
+    ```
+  </Step>
+
+  <Step title="Wait for graceful shutdown">
+    Waits for each process to exit:
+    ```go
+    backendCmd.Wait()
+    telegramCmd.Wait()
+    ccxtCmd.Wait()
+    ```
+  </Step>
+
+  <Step title="Update state">
+    Marks gateway as `down` in state file
+  </Step>
+
+  <Step title="Exit">
+    Gateway process exits cleanly
+  </Step>
+</Steps>
+
+## Advanced Usage
+
+### Custom Configuration File
+
+Override default config location:
+
+```bash
+export NEURATRADE_HOME=/custom/path
+neuratrade gateway start
+```
+
+The gateway will look for `config.json` at `/custom/path/config.json`.
+
+### Port Resolution Logic
+
+Backend port resolution follows this precedence:
+
+1. `SERVER_PORT` environment variable
+2. `PORT` environment variable
+3. `BACKEND_HOST_PORT` environment variable
+4. `config.server.port` from config.json
+5. Default: `8080`
+
+### Supervised Mode for Production
+
+For production deployments with slower startup (database migrations, market data loading):
+
+```bash
+export NEURATRADE_GATEWAY_SUPERVISED=1
+export NEURATRADE_GATEWAY_HEALTH_TIMEOUT_SECONDS=300
+neuratrade gateway start --supervised
+```
+
+This gives services 5 minutes to become healthy before failing.
+
+### systemd Integration
+
+Create a systemd service for automatic startup:
+
+```ini /etc/systemd/system/neuratrade.service
+[Unit]
+Description=NeuraTrade Gateway
+After=network.target redis.service
+
+[Service]
+Type=simple
+User=neuratrade
+WorkingDirectory=/home/neuratrade
+Environment="NEURATRADE_HOME=/home/neuratrade/.neuratrade"
+ExecStart=/home/neuratrade/.local/bin/neuratrade gateway start --supervised
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable neuratrade
+sudo systemctl start neuratrade
+```
+
+## Troubleshooting
+
+### Gateway Won't Start
+
+<AccordionGroup>
+  <Accordion title="Port already in use">
+    Check which process is using the port:
+    ```bash
+    lsof -i :8080
+    ```
+    
+    Kill the conflicting process or change the port:
+    ```bash
+    export PORT=8081
+    neuratrade gateway start
+    ```
+  </Accordion>
+
+  <Accordion title="Permission denied on log files">
+    Fix log directory permissions:
+    ```bash
+    chmod -R 755 ~/.neuratrade/logs
+    ```
+  </Accordion>
+
+  <Accordion title="Config file not found">
+    Verify NEURATRADE_HOME is set correctly:
+    ```bash
+    echo $NEURATRADE_HOME
+    ls -la $NEURATRADE_HOME/config.json
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Services Show as Unhealthy
+
+<AccordionGroup>
+  <Accordion title="Backend database connection fails">
+    Check database configuration:
+    ```bash
+    # For SQLite
+    ls -la ~/.neuratrade/data/neuratrade.db
+    
+    # Test SQLite access
+    sqlite3 ~/.neuratrade/data/neuratrade.db "SELECT 1;"
+    ```
+  </Accordion>
+
+  <Accordion title="Redis connection timeout">
+    Verify Redis is running:
+    ```bash
+    redis-cli ping
+    # Should return: PONG
+    ```
+    
+    Check Redis configuration:
+    ```bash
+    echo $REDIS_HOST
+    echo $REDIS_PORT
+    ```
+  </Accordion>
+
+  <Accordion title="Telegram bot token invalid">
+    Test bot token:
+    ```bash
+    curl https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe
+    ```
+    
+    If invalid, get a new token from @BotFather.
+  </Accordion>
+</AccordionGroup>
+
+### PID Files Are Stale
+
+If services crashed ungracefully, PID files may point to dead processes:
+
+```bash
+# Remove stale PID files
+rm ~/.neuratrade/pids/*.pid
+
+# Restart gateway
+neuratrade gateway start
+```
+
+## Source Code Reference
+
+Key implementation files:
+
+- `cmd/neuratrade-cli/gateway.go:51` - `gatewayStart` function
+- `cmd/neuratrade-cli/gateway.go:336` - `gatewayStop` function
+- `cmd/neuratrade-cli/gateway.go:438` - `gatewayStatus` function
+- `cmd/neuratrade-cli/gateway.go:296` - `startService` helper
+- `cmd/neuratrade-cli/gateway.go:703` - `monitorGatewayHealth` background monitor
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Native Deployment" icon="server" href="/guides/native-deployment">
+    Full deployment guide
+  </Card>
+  
+  <Card title="Monitoring Guide" icon="chart-line" href="/guides/monitoring">
+    Advanced health monitoring
+  </Card>
+  
+  <Card title="Telegram Setup" icon="telegram" href="/guides/telegram-setup">
+    Configure Telegram bot
+  </Card>
+  
+  <Card title="Configuration" icon="gear" href="/essentials/configuration">
+    Complete configuration reference
+  </Card>
+</CardGroup>

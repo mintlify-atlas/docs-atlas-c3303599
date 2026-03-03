@@ -1,0 +1,193 @@
+---
+title: 'Order Book'
+description: 'Fetch real-time order book depth with bids and asks'
+api: 'GET /api/v1/market/orderbook/:exchange/:symbol'
+---
+
+## Overview
+
+Retrieve the current order book for a trading pair, including bids and asks with price levels and quantities. This endpoint provides real-time market depth data essential for analyzing liquidity and market microstructure.
+
+## Endpoint
+
+```
+GET /api/v1/market/orderbook/:exchange/:symbol
+```
+
+## Path Parameters
+
+<ParamField path="exchange" type="string" required>
+  The exchange identifier (e.g., `binance`, `coinbase`, `kraken`)
+</ParamField>
+
+<ParamField path="symbol" type="string" required>
+  The trading pair symbol in exchange format (e.g., `BTC/USDT`, `ETH/USD`)
+</ParamField>
+
+## Query Parameters
+
+<ParamField query="limit" type="integer" default="20">
+  Number of price levels to return for both bids and asks. Valid range: 1-100. Default is 20.
+</ParamField>
+
+## Response Schema
+
+<ResponseField name="exchange" type="string" required>
+  The exchange name from the request
+</ResponseField>
+
+<ResponseField name="symbol" type="string" required>
+  The trading pair symbol from the request
+</ResponseField>
+
+<ResponseField name="bids" type="array" required>
+  Array of bid price levels, where each entry is `[price, amount]`
+  
+  <Expandable title="Bid Entry Format">
+    <ResponseField name="[0]" type="float">
+      Bid price level
+    </ResponseField>
+    <ResponseField name="[1]" type="float">
+      Total quantity available at this price level
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="asks" type="array" required>
+  Array of ask price levels, where each entry is `[price, amount]`
+  
+  <Expandable title="Ask Entry Format">
+    <ResponseField name="[0]" type="float">
+      Ask price level
+    </ResponseField>
+    <ResponseField name="[1]" type="float">
+      Total quantity available at this price level
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="timestamp" type="timestamp" required>
+  The timestamp when this order book snapshot was captured
+</ResponseField>
+
+<ResponseField name="cached" type="boolean" required>
+  Indicates whether the data was served from Redis cache
+</ResponseField>
+
+## Code Examples
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET "https://api.neuratrade.io/api/v1/market/orderbook/binance/BTC/USDT?limit=10" \
+  -H "Content-Type: application/json"
+```
+
+```javascript JavaScript
+const params = new URLSearchParams({ limit: '10' });
+const response = await fetch(
+  `https://api.neuratrade.io/api/v1/market/orderbook/binance/BTC/USDT?${params}`
+);
+const orderbook = await response.json();
+
+// Calculate bid-ask spread
+const bestBid = orderbook.bids[0][0];
+const bestAsk = orderbook.asks[0][0];
+const spread = bestAsk - bestBid;
+console.log(`Spread: ${spread}`);
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    'https://api.neuratrade.io/api/v1/market/orderbook/binance/BTC/USDT',
+    params={'limit': 10}
+)
+orderbook = response.json()
+
+# Calculate total bid liquidity in top 10 levels
+total_bid_liquidity = sum(bid[1] for bid in orderbook['bids'])
+print(f"Total bid liquidity: {total_bid_liquidity} BTC")
+```
+
+</CodeGroup>
+
+## Response Example
+
+```json
+{
+  "exchange": "binance",
+  "symbol": "BTC/USDT",
+  "bids": [
+    [49999.50, 1.2345],
+    [49999.00, 0.5678],
+    [49998.50, 2.1234]
+  ],
+  "asks": [
+    [50000.50, 0.9876],
+    [50001.00, 1.5432],
+    [50001.50, 0.7654]
+  ],
+  "timestamp": "2026-03-03T10:30:45Z",
+  "cached": false
+}
+```
+
+## Caching Behavior
+
+- **Cache TTL**: 5 seconds (shorter than tickers due to rapid order book changes)
+- **Cache Key Format**: `orderbook:{exchange}:{symbol}:{limit}`
+- **Cache Analytics**: Cache hits/misses are tracked in the `order_books` category
+
+## Order Book Metrics
+
+For advanced order book analysis including imbalance, liquidity scores, and depth metrics, use the metrics endpoint:
+
+```
+GET /api/v1/market/orderbook/:exchange/:symbol/metrics
+```
+
+This endpoint calculates:
+- Bid-ask spread and mid-price
+- Order book imbalance at 1% and 2% depth
+- Liquidity scores
+- Best bid/ask prices
+
+## Error Responses
+
+<ResponseExample>
+
+```json 400 Bad Request
+{
+  "error": "Exchange and symbol are required"
+}
+```
+
+```json 503 Service Unavailable
+{
+  "error": "Market data service is currently unavailable"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "error": "Failed to fetch order book data"
+}
+```
+
+</ResponseExample>
+
+## Implementation Details
+
+- **Data Source**: Live CCXT service only (no database fallback)
+- **Service Health Check**: Returns 503 if CCXT service is unhealthy
+- **Limit Validation**: Values outside 1-100 range default to 20
+- **Source Code**: `services/backend-api/internal/api/handlers/market.go:518`
+
+## Use Cases
+
+- **Market Making**: Monitor bid/ask spreads for trading opportunities
+- **Liquidity Analysis**: Assess market depth before placing large orders
+- **Arbitrage Detection**: Compare order books across exchanges
+- **Price Discovery**: Identify support and resistance levels from order clustering

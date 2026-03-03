@@ -1,0 +1,367 @@
+---
+title: Exchange Commands
+description: Manage exchange connections and test connectivity
+---
+
+The `exchanges` command manages cryptocurrency exchange integrations via the CCXT service.
+
+## List Exchanges
+
+List all configured exchanges:
+
+```bash
+./bin/neuratrade exchanges list
+```
+
+### Example Output (API Available)
+
+```terminal
+Configured Exchanges
+====================
+
+Found 3 configured exchanges:
+
+  🔑 ✓ binance [active]
+  🔑 ✓ bybit [active]
+     ✓ coinbase [active]
+
+Legend:
+  🔑 = Has API credentials (private data access)
+  ✓  = Active and loading market data
+  ⚠️  = Configured but disabled
+```
+
+### Example Output (Fallback to Config)
+
+```terminal
+Configured Exchanges
+====================
+⚠️  Warning: Could not reach API: connection refused
+
+Falling back to local configuration...
+
+Found 2 configured exchanges:
+  - binance 🔑
+  - bybit
+```
+
+### How It Works
+
+1. **Try API** - Calls `/api/v1/exchanges` on backend
+2. **Fallback** - Reads `~/.neuratrade/config.json` if API unavailable
+3. **Display** - Shows exchange name, credentials status, active status
+
+### Exchange Status Icons
+
+- **🔑** - Has API key and secret (can access private endpoints)
+- **✓** - Exchange is active and loading market data
+- **⚠️** - Exchange configured but disabled
+
+## Add Exchange
+
+Add a new exchange connection:
+
+```bash
+./bin/neuratrade exchanges add --name binance
+```
+
+### With API Credentials
+
+```bash
+./bin/neuratrade exchanges add \
+  --name binance \
+  --api-key YOUR_API_KEY \
+  --secret YOUR_API_SECRET
+```
+
+### Example Output (API Available)
+
+```terminal
+Adding exchange: binance
+  - API key: configured ✓
+  - API secret: configured ✓
+
+✅ Exchange binance added successfully!
+Exchange has been registered and is now available.
+
+Market data will be available shortly.
+```
+
+### Example Output (Fallback to Config)
+
+```terminal
+Adding exchange: binance
+  - API key: configured ✓
+⚠️  Warning: Could not reach API: connection refused
+
+Falling back to local configuration...
+
+✅ Exchange binance added successfully!
+
+Note: Configuration saved locally.
+To apply changes, restart the CCXT service:
+  neuratrade gateway restart
+
+Or reload exchanges:
+  neuratrade exchanges reload
+```
+
+### Flags
+
+#### `--name` (required)
+
+Exchange identifier (e.g., `binance`, `bybit`, `coinbase`):
+
+```bash
+--name binance
+```
+
+Supported exchanges: See [CCXT Supported Exchanges](https://github.com/ccxt/ccxt#supported-cryptocurrency-exchange-markets)
+
+#### `--api-key` (optional)
+
+Exchange API key for private data access:
+
+```bash
+--api-key your_api_key_here
+```
+
+<Warning>
+API keys grant access to your exchange account. Keep them secure and never commit them to version control.
+</Warning>
+
+#### `--secret` (optional)
+
+Exchange API secret:
+
+```bash
+--secret your_api_secret_here
+```
+
+### Public vs. Private Access
+
+**Without credentials** (public access only):
+- Market data (tickers, orderbook, trades)
+- Historical OHLCV data
+- Exchange metadata
+
+**With credentials** (private access):
+- Account balances
+- Open orders
+- Trade history
+- Place/cancel orders
+- Transfer funds
+
+## Remove Exchange
+
+Remove an exchange connection:
+
+```bash
+./bin/neuratrade exchanges remove --name binance
+```
+
+### Example Output
+
+```terminal
+Removing exchange: binance
+
+✅ Exchange binance removed successfully!
+Exchange has been unregistered and is no longer available.
+```
+
+### Flags
+
+#### `--name` (required)
+
+Exchange name to remove:
+
+```bash
+--name binance
+```
+
+## Reload Exchanges
+
+Reload CCXT service configuration without restarting:
+
+```bash
+./bin/neuratrade exchanges reload
+```
+
+### Example Output
+
+```terminal
+Reloading exchange configuration...
+
+✅ Exchange configuration reloaded!
+All exchanges have been reinitialized with current configuration.
+```
+
+### When to Reload
+
+- After adding/removing exchanges
+- After updating API credentials in `config.json`
+- After changing exchange settings
+
+Alternatively, restart the gateway:
+
+```bash
+./bin/neuratrade gateway stop
+./bin/neuratrade gateway start
+```
+
+## Test Exchange Connectivity
+
+Test if exchanges are reachable:
+
+```bash
+./bin/neuratrade health
+```
+
+This includes exchange connectivity in the health check:
+
+```terminal
+Health Check Results
+===================
+✓ Backend API: healthy
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ✓ ccxt_service: healthy
+  ✓ exchange_binance: healthy
+  ✓ exchange_bybit: healthy
+```
+
+## Configuration Format
+
+### In `config.json`
+
+```json
+{
+  "ccxt": {
+    "service_url": "http://localhost:3001",
+    "admin_api_key": "your-admin-key",
+    "exchanges": {
+      "enabled": ["binance", "bybit"],
+      "api_keys": {
+        "binance": {
+          "api_key": "your-binance-key",
+          "secret": "your-binance-secret"
+        }
+      }
+    }
+  }
+}
+```
+
+### API Response Format
+
+```json
+{
+  "exchanges": [
+    {
+      "name": "binance",
+      "enabled": true,
+      "has_auth": true,
+      "added_at": "2026-03-03T10:00:00Z"
+    },
+    {
+      "name": "bybit",
+      "enabled": true,
+      "has_auth": false,
+      "added_at": "2026-03-03T10:05:00Z"
+    }
+  ],
+  "count": 2
+}
+```
+
+## Supported Exchanges
+
+NeuraTrade uses [CCXT](https://github.com/ccxt/ccxt) for exchange connectivity.
+
+Popular exchanges:
+
+- **binance** - Binance (spot + futures)
+- **bybit** - Bybit
+- **coinbase** - Coinbase Pro
+- **kraken** - Kraken
+- **okx** - OKX
+- **kucoin** - KuCoin
+- **gateio** - Gate.io
+- **bitget** - Bitget
+- **mexc** - MEXC
+
+Full list: [CCXT Exchanges](https://github.com/ccxt/ccxt#supported-cryptocurrency-exchange-markets)
+
+## Security Best Practices
+
+<Warning>
+**API Key Security:**
+
+1. Use read-only API keys when possible
+2. Restrict IP addresses in exchange settings
+3. Never share API keys in logs or screenshots
+4. Rotate keys regularly
+5. Store secrets in config with `chmod 600` permissions
+</Warning>
+
+### Read-Only API Keys
+
+For market data only, create read-only keys:
+
+1. Exchange dashboard → API Management
+2. Create new API key
+3. Enable: "Read" permissions only
+4. Disable: "Trade", "Withdraw", "Transfer"
+
+### IP Whitelisting
+
+Restrict API key usage to your server IP:
+
+1. Exchange dashboard → API Management
+2. Add your server's IP address
+3. Save and verify
+
+## Troubleshooting
+
+### "Exchange already configured"
+
+Remove the existing exchange first:
+
+```bash
+./bin/neuratrade exchanges remove --name binance
+./bin/neuratrade exchanges add --name binance --api-key ... --secret ...
+```
+
+### "Invalid API credentials"
+
+Verify your API key and secret:
+
+1. Check for typos or whitespace
+2. Verify key is active in exchange dashboard
+3. Check IP whitelist settings
+4. Ensure key has required permissions
+
+### "Exchange not found"
+
+Check the exchange ID matches CCXT naming:
+
+```bash
+# Wrong
+./bin/neuratrade exchanges add --name BinanceUS
+
+# Correct
+./bin/neuratrade exchanges add --name binanceus
+```
+
+Find correct ID: [CCXT Exchange IDs](https://github.com/ccxt/ccxt/wiki/Exchange-Markets)
+
+### Reload Not Working
+
+Restart the gateway instead:
+
+```bash
+./bin/neuratrade gateway stop
+./bin/neuratrade gateway start
+```

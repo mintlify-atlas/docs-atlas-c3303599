@@ -1,0 +1,480 @@
+---
+title: 'Native Deployment'
+description: 'Step-by-step guide for deploying NeuraTrade natively without Docker'
+icon: 'server'
+---
+
+# Native Deployment Guide
+
+This guide walks through deploying NeuraTrade natively on your system without Docker, giving you full control over the deployment process.
+
+## Prerequisites
+
+Before deploying NeuraTrade natively, ensure you have:
+
+- **Go 1.21+** for backend compilation
+- **Bun 1.0+** for Telegram service
+- **Redis** running on localhost:6379
+- **SQLite3** or PostgreSQL for persistent storage
+- **Git** for cloning the repository
+
+<Note>
+Native deployment is recommended for development environments and power users who need direct access to logs and service processes.
+</Note>
+
+## Step 1: Build NeuraTrade
+
+The Makefile provides a comprehensive build target that compiles all binaries and sets up service dependencies.
+
+```bash
+cd /path/to/neuratrade
+make build
+```
+
+<Steps>
+  <Step title="Download Go dependencies">
+    The build process starts by downloading Go module dependencies for the backend API:
+    ```bash
+    cd services/backend-api && go mod download
+    ```
+    This creates local Go cache directories under `.cache/go-build` and `.cache/go-mod`.
+  </Step>
+
+  <Step title="Install Telegram service dependencies">
+    If Bun is installed and the Telegram service exists, dependencies are installed:
+    ```bash
+    cd services/telegram-service && bun install --frozen-lockfile
+    ```
+  </Step>
+
+  <Step title="Compile backend binaries">
+    Two main binaries are built:
+    - `bin/neuratrade-server` - Main backend API server
+    - `bin/neuratrade` - Gateway CLI for service orchestration
+    
+    ```bash
+    cd services/backend-api && go build -o ../../bin/neuratrade-server ./cmd/server
+    cd cmd/neuratrade-cli && go build -o ../../bin/neuratrade .
+    ```
+  </Step>
+
+  <Step title="Create service launchers">
+    Stub scripts are generated for services:
+    - `bin/ccxt-service` - CCXT stub (functionality runs within neuratrade-server)
+    - `bin/telegram-service` - Bun launcher that executes the Telegram service
+  </Step>
+</Steps>
+
+### Build Output
+
+After successful build, you should see:
+
+```bash Terminal Output
+✅ Build complete: bin/neuratrade-server, bin/neuratrade
+```
+
+Your `bin/` directory will contain:
+
+```
+bin/
+├── neuratrade-server    # Backend API (Go binary)
+├── neuratrade           # Gateway CLI (Go binary)
+├── ccxt-service         # CCXT stub script
+└── telegram-service     # Telegram service launcher
+```
+
+## Step 2: Configure Environment
+
+NeuraTrade uses environment variables and a local config file for configuration.
+
+### Create NeuraTrade Home Directory
+
+```bash
+export NEURATRADE_HOME="$HOME/.neuratrade"
+mkdir -p $NEURATRADE_HOME/{logs,pids,data}
+```
+
+### Environment Variables
+
+Create `.env` file or export these variables:
+
+<CodeGroup>
+```bash Development
+export APP_ENV=development
+export LOG_LEVEL=info
+
+# Server Configuration
+export PORT=8080
+export HOST=0.0.0.0
+
+# Database
+export DATABASE_DRIVER=sqlite
+export SQLITE_PATH="$HOME/.neuratrade/data/neuratrade.db"
+
+# Redis
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+
+# Services
+export CCXT_SERVICE_URL="http://127.0.0.1:3001"
+export TELEGRAM_SERVICE_URL="http://127.0.0.1:3002"
+
+# Security (generate secure keys!)
+export JWT_SECRET=$(openssl rand -hex 32)
+export ADMIN_API_KEY=$(openssl rand -hex 24)
+
+# Telegram Bot
+export TELEGRAM_BOT_TOKEN="your-bot-token-from-botfather"
+export TELEGRAM_USE_POLLING=true
+
+# AI Provider (optional)
+export AI_PROVIDER=openai
+export AI_API_KEY="your-openai-key"
+export AI_MODEL=gpt-4
+```
+
+```bash Production
+export APP_ENV=production
+export LOG_LEVEL=warn
+
+# Server Configuration  
+export PORT=8080
+export HOST=0.0.0.0
+
+# Database
+export DATABASE_DRIVER=sqlite
+export SQLITE_PATH="/var/lib/neuratrade/data/neuratrade.db"
+
+# Redis
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+
+# Services
+export CCXT_SERVICE_URL="http://127.0.0.1:3001"
+export TELEGRAM_SERVICE_URL="http://127.0.0.1:3002"
+
+# Security (use strong production keys!)
+export JWT_SECRET="$(openssl rand -hex 32)"
+export ADMIN_API_KEY="$(openssl rand -hex 32)"
+
+# Telegram Bot
+export TELEGRAM_BOT_TOKEN="your-production-bot-token"
+export TELEGRAM_USE_POLLING=false
+export TELEGRAM_WEBHOOK_URL="https://your-domain.com/telegram/webhook"
+
+# Sentry (optional)
+export SENTRY_DSN="your-sentry-dsn"
+export SENTRY_ENVIRONMENT=production
+```
+</CodeGroup>
+
+<Warning>
+Never commit `.env` files with real credentials to version control. Use strong, randomly generated keys for production deployments.
+</Warning>
+
+## Step 3: Start Services via Gateway CLI
+
+The `neuratrade` gateway CLI orchestrates all services with a single command.
+
+### Start All Services
+
+```bash
+./bin/neuratrade gateway start
+```
+
+<Steps>
+  <Step title="Gateway initializes">
+    The gateway reads configuration and prepares runtime state:
+    ```
+    🚀 Starting NeuraTrade Gateway...
+    
+    📁 NeuraTrade Home: /home/user/.neuratrade
+    ⚙️  Config File: /home/user/.neuratrade/config.json
+    🌐 Backend Port: 8080 (public)
+    🔌 CCXT Port: 3001 (internal, bound to 127.0.0.1)
+    📞 Telegram Port: 3002 (internal, bound to 127.0.0.1)
+    🛡️  Supervised Mode: false
+    ⏱️  Health Timeout: 1m30s
+    ```
+  </Step>
+
+  <Step title="CCXT service starts">
+    ```
+    📊 Starting CCXT Service...
+    ✅ CCXT Service started
+    ```
+    PID written to `~/.neuratrade/pids/ccxt.pid`
+  </Step>
+
+  <Step title="Backend API starts">
+    ```
+    🔧 Starting Backend API...
+    ✅ Backend API started
+    ```
+    Gateway performs health probe at `http://127.0.0.1:8080/health`
+  </Step>
+
+  <Step title="Telegram service starts">
+    ```
+    📞 Starting Telegram Service...
+    ✅ Telegram Service started
+    
+    🎉 All services started successfully!
+    
+    📡 Backend API: http://localhost:8080
+    🏥 Health Check: http://localhost:8080/health
+    
+    Press Ctrl+C to stop all services
+    ```
+  </Step>
+</Steps>
+
+### Supervised Mode
+
+For production deployments, use supervised mode which keeps the gateway running even if initial health checks haven't passed:
+
+```bash
+./bin/neuratrade gateway start --supervised
+```
+
+This allows services to warm up gradually without immediate termination.
+
+## Step 4: Verify Deployment
+
+### Check Service Status
+
+```bash
+./bin/neuratrade gateway status
+```
+
+**Expected Output:**
+
+```bash
+📊 NeuraTrade Service Status
+============================
+
+Runtime Mode: HEALTHY
+Last Update: 2026-03-03T10:30:00Z
+
+✅ Backend API: Running (PID: 12345)
+✅ CCXT Service: Running (PID: 12346)
+✅ Telegram Service: Running (PID: 12347)
+
+🚪 Health Check: http://127.0.0.1:8080/health
+
+✅ Backend Status: healthy
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ✓ ccxt: healthy
+  ✓ telegram: healthy
+```
+
+### Test Health Endpoint
+
+```bash
+curl http://localhost:8080/health
+```
+
+<CodeGroup>
+```json Response
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T10:30:00Z",
+  "services": {
+    "database": "healthy",
+    "redis": "healthy",
+    "ccxt": "healthy",
+    "telegram": "healthy"
+  },
+  "version": "1.0.0",
+  "uptime": "5m30s"
+}
+```
+</CodeGroup>
+
+## Step 5: Monitor Logs
+
+Logs are written to `~/.neuratrade/logs/` directory.
+
+### View Backend Logs
+
+```bash
+# Follow backend logs
+make logs
+
+# Or directly:
+tail -f ~/.neuratrade/logs/backend.log
+```
+
+### View Gateway Logs
+
+```bash
+make logs-all
+
+# Or directly:
+tail -f ~/.neuratrade/logs/gateway.log
+```
+
+### View Telegram Service Logs
+
+```bash
+tail -f ~/.neuratrade/logs/telegram.log
+```
+
+### Log Locations
+
+| Service | Log File |
+|---------|----------|
+| Backend API | `~/.neuratrade/logs/backend.log` |
+| Gateway | `~/.neuratrade/logs/gateway.log` |
+| CCXT Service | `~/.neuratrade/logs/ccxt.log` |
+| Telegram Service | `~/.neuratrade/logs/telegram.log` |
+
+<Tip>
+For production deployments, configure log rotation using `logrotate` to prevent disk space issues.
+</Tip>
+
+## Step 6: Stop Services
+
+Gracefully stop all services:
+
+```bash
+./bin/neuratrade gateway stop
+```
+
+**Output:**
+
+```bash
+🛑 Stopping NeuraTrade services...
+
+✅ Backend API: Stopped (PID: 12345)
+✅ CCXT Service: Stopped (PID: 12346)
+✅ Telegram Service: Stopped (PID: 12347)
+
+✅ Stopped 3 service(s)
+```
+
+<Note>
+The gateway sends SIGTERM to each service and waits for graceful shutdown. PID files are automatically cleaned up.
+</Note>
+
+## Installing with install.sh
+
+For system-wide installation, use the included installer:
+
+```bash
+./install.sh
+```
+
+This will:
+- Build all binaries
+- Install to `~/.local/bin/`
+- Create config directory at `~/.neuratrade/`
+- Generate environment template
+- Create bootstrap commands
+- Optionally set up autostart (macOS only)
+
+### Installation Options
+
+```bash
+# Skip build (use pre-built binaries)
+./install.sh --skip-build
+
+# Enable autostart on login (macOS)
+./install.sh --enable-autostart
+
+# Disable autostart
+./install.sh --disable-autostart
+```
+
+## Troubleshooting
+
+### Services Won't Start
+
+1. **Check if ports are available:**
+   ```bash
+   lsof -i :8080  # Backend
+   lsof -i :3001  # CCXT
+   lsof -i :3002  # Telegram
+   ```
+
+2. **Verify Redis is running:**
+   ```bash
+   redis-cli ping
+   # Should respond: PONG
+   ```
+
+3. **Check environment variables:**
+   ```bash
+   ./bin/neuratrade config status
+   ```
+
+### Health Check Fails
+
+<Tabs>
+  <Tab title="Database Error">
+    Check SQLite file permissions:
+    ```bash
+    ls -la ~/.neuratrade/data/neuratrade.db
+    chmod 644 ~/.neuratrade/data/neuratrade.db
+    ```
+  </Tab>
+  
+  <Tab title="Redis Error">
+    Verify Redis connection:
+    ```bash
+    redis-cli -h localhost -p 6379 ping
+    ```
+    
+    If Redis isn't running:
+    ```bash
+    # macOS
+    brew services start redis
+    
+    # Linux
+    sudo systemctl start redis
+    ```
+  </Tab>
+  
+  <Tab title="Telegram Error">
+    Verify bot token is set:
+    ```bash
+    echo $TELEGRAM_BOT_TOKEN
+    ```
+    
+    Test token validity:
+    ```bash
+    curl https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe
+    ```
+  </Tab>
+</Tabs>
+
+### Logs Show Permission Errors
+
+Ensure log directory is writable:
+
+```bash
+chmod -R 755 ~/.neuratrade/logs
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Gateway CLI Reference" icon="terminal" href="/guides/gateway-cli">
+    Learn all gateway commands and options
+  </Card>
+  
+  <Card title="Telegram Setup" icon="telegram" href="/guides/telegram-setup">
+    Configure your Telegram bot
+  </Card>
+  
+  <Card title="Monitoring Guide" icon="chart-line" href="/guides/monitoring">
+    Monitor system health and performance
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore the REST API
+  </Card>
+</CardGroup>

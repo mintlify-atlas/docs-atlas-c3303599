@@ -1,0 +1,291 @@
+---
+title: Status Commands
+description: Check NeuraTrade system status and health
+---
+
+NeuraTrade provides commands to check system status, service health, and connectivity.
+
+## System Status
+
+Show overall system status:
+
+```bash
+./bin/neuratrade status
+```
+
+### Example Output (Healthy)
+
+```terminal
+NeuraTrade System Status
+=======================
+Version: v1.0.0
+  Status: healthy
+
+Connected Services:
+  - Backend API: Connected ✓
+  - Database: Connected ✓
+  - Redis: Connected ✓
+  - Telegram: Ready ✓
+  - AI Providers: Configured ✓
+
+Checked at: 2026-03-03T10:30:00Z
+```
+
+### Example Output (Backend Unreachable)
+
+```terminal
+NeuraTrade System Status
+=======================
+Version: v1.0.0
+⚠️  Warning: Could not reach API at http://localhost:8080
+   Ensure the backend is running: neuratrade gateway start
+
+Simulated status (backend may not be running):
+  Status: Unknown (API unreachable)
+```
+
+### How It Works
+
+1. Determines backend URL from config or environment
+2. Calls `/health` endpoint on backend API
+3. Displays service status and connectivity
+4. Falls back to local status if API is unreachable
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `NEURATRADE_API_BASE_URL` | Backend API base URL | `http://localhost:8080` |
+| `NEURATRADE_API_KEY` | API authentication key | From config |
+| `SERVER_PORT` | Backend port | `8080` |
+
+## Health Check
+
+Perform detailed health checks:
+
+```bash
+./bin/neuratrade health
+```
+
+### Example Output (Healthy)
+
+```terminal
+Health Check Results
+===================
+✓ Backend API: healthy
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ✓ ccxt_service: healthy
+  ✓ telegram_service: healthy
+  ✓ exchange_binance: healthy
+  ✓ exchange_bybit: healthy
+
+Checked at: 2026-03-03T10:30:00Z
+```
+
+### Example Output (Degraded)
+
+```terminal
+Health Check Results
+===================
+⚠️ Backend API: degraded
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ⚠️ ccxt_service: connection_timeout
+  ✓ telegram_service: healthy
+  ⚠️ exchange_binance: rate_limited
+  ✓ exchange_bybit: healthy
+
+Checked at: 2026-03-03T10:30:00Z
+```
+
+### Example Output (Backend Down)
+
+```terminal
+Health Check Results
+===================
+❌ Error: Could not reach API at http://localhost:8080
+   Ensure the backend is running: neuratrade gateway start
+Backend API unreachable
+```
+
+### Health Check Components
+
+The backend `/health` endpoint checks:
+
+- **Database** - SQLite/PostgreSQL connectivity and query execution
+- **Redis** - Connection and command execution
+- **CCXT Service** - Exchange data bridge availability
+- **Telegram Service** - Bot service connectivity
+- **Exchange Connections** - Individual exchange API health (if configured)
+- **AI Providers** - LLM provider connectivity (if configured)
+
+## Backend URL Resolution
+
+The CLI determines the backend URL in this order:
+
+1. **Environment Variable** - `NEURATRADE_API_BASE_URL`
+2. **Config File** - `telegram.api_base_url` (if not `api.telegram.org`)
+3. **Port from Environment** - Uses `SERVER_PORT`, `PORT`, or `BACKEND_HOST_PORT`
+4. **Config Port** - `server.port` from `config.json`
+5. **Default** - `http://localhost:8080`
+
+<Warning>
+The CLI skips `telegram.api_base_url` if it contains `api.telegram.org` to avoid accidentally using the Telegram public API endpoint as the backend URL.
+</Warning>
+
+## Service Status Response Format
+
+The backend returns health status in JSON:
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T10:30:00Z",
+  "services": {
+    "database": "healthy",
+    "redis": "healthy",
+    "ccxt_service": "healthy",
+    "telegram_service": "healthy"
+  }
+}
+```
+
+### Status Values
+
+- **healthy** / **ok** - Service fully operational
+- **degraded** - Service operational but with issues
+- **unhealthy** - Service experiencing failures
+- **down** - Service not responding
+
+## PID Status
+
+Check running processes via PID files:
+
+```bash
+./bin/neuratrade gateway status
+```
+
+See [Gateway Commands](/cli/gateway) for details.
+
+## Continuous Monitoring
+
+Monitor health in a loop:
+
+```bash
+watch -n 5 './bin/neuratrade health'
+```
+
+This runs the health check every 5 seconds.
+
+## Exit Codes
+
+Commands return standard exit codes:
+
+- **0** - Success (healthy)
+- **1** - Error (unhealthy or unreachable)
+
+### Example in Scripts
+
+```bash
+if ./bin/neuratrade health; then
+  echo "System is healthy"
+else
+  echo "System is unhealthy"
+  # Send alert, restart services, etc.
+fi
+```
+
+## Troubleshooting
+
+### "Could not reach API"
+
+Ensure the backend is running:
+
+```bash
+./bin/neuratrade gateway start
+```
+
+Check the backend port:
+
+```bash
+lsof -i :8080
+```
+
+Verify the backend URL:
+
+```bash
+echo $NEURATRADE_API_BASE_URL
+```
+
+### "Invalid API response"
+
+Check backend logs:
+
+```bash
+tail -50 ~/.neuratrade/logs/backend.log
+```
+
+Verify the `/health` endpoint manually:
+
+```bash
+curl http://localhost:8080/health
+```
+
+### Health Check Timeout
+
+The CLI uses a 5-second timeout for health checks. Slow responses may indicate:
+
+- Database connection issues
+- Exchange API latency
+- High system load
+
+Check individual service logs for details.
+
+## Health Metrics in Gateway State
+
+The gateway monitors health continuously and writes to:
+
+```
+~/.neuratrade/pids/gateway-state.json
+```
+
+View the current state:
+
+```bash
+cat ~/.neuratrade/pids/gateway-state.json | jq .
+```
+
+Example:
+
+```json
+{
+  "mode": "healthy",
+  "supervised": false,
+  "updated_at": "2026-03-03T10:30:15Z",
+  "health_timeout_seconds": 90,
+  "services": {
+    "backend": {
+      "status": "healthy",
+      "detail": "Backend API reachable (200)",
+      "endpoint": "http://127.0.0.1:8080/health"
+    },
+    "telegram": {
+      "status": "healthy",
+      "detail": "Telegram Service reachable (200)",
+      "endpoint": "http://127.0.0.1:3002/health"
+    },
+    "ccxt": {
+      "status": "healthy",
+      "detail": "process started",
+      "endpoint": "http://127.0.0.1:3001/health"
+    }
+  }
+}
+```
+
+The gateway updates this file every 15 seconds while running.

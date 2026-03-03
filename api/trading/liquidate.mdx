@@ -1,0 +1,255 @@
+---
+title: Liquidate Positions
+api: POST /api/v1/trading/liquidate
+description: Liquidate one or all open trading positions
+---
+
+Liquidate open positions either by position ID, symbol, or liquidate all open positions at once. Liquidation forcibly closes positions and updates their status to `LIQUIDATED`.
+
+<Warning>
+  Liquidation is a destructive operation that immediately closes positions. Use with caution in production environments.
+</Warning>
+
+## Endpoints
+
+### Liquidate Single Position
+
+**POST** `/api/v1/trading/liquidate`
+
+Liquidate one open position by either `position_id` or `symbol`.
+
+### Liquidate All Positions
+
+**POST** `/api/v1/trading/liquidate_all`
+
+Liquidate all open positions in a single operation.
+
+---
+
+## Liquidate Single Position
+
+### Request Body
+
+<ParamField body="position_id" type="string" optional>
+  Unique identifier of the position to liquidate. Takes priority over `symbol` if both are provided.
+  
+  Format: `pos-YYYYMMDDHHMMSS-sequence`
+  
+  Example: `"pos-20260303120000-1"`
+</ParamField>
+
+<ParamField body="symbol" type="string" optional>
+  Trading pair symbol. Liquidates the first open position matching this symbol.
+  
+  Example: `"BTC/USDT"`
+</ParamField>
+
+<Note>
+  Either `position_id` or `symbol` must be provided. If both are provided, `position_id` takes precedence.
+</Note>
+
+### Response
+
+<ResponseField name="status" type="string">
+  Response status: `"success"` or `"error"`
+</ResponseField>
+
+<ResponseField name="data" type="PositionRecord">
+  Updated position details after liquidation
+  
+  <Expandable title="PositionRecord properties">
+    <ResponseField name="position_id" type="string">
+      Unique position identifier
+    </ResponseField>
+    
+    <ResponseField name="order_id" type="string">
+      ID of the order that opened this position
+    </ResponseField>
+    
+    <ResponseField name="exchange" type="string">
+      Exchange where position was held
+    </ResponseField>
+    
+    <ResponseField name="symbol" type="string">
+      Trading pair symbol
+    </ResponseField>
+    
+    <ResponseField name="side" type="string">
+      Position side (`BUY` or `SELL`)
+    </ResponseField>
+    
+    <ResponseField name="size" type="string">
+      Position size (decimal string)
+    </ResponseField>
+    
+    <ResponseField name="entry_price" type="string">
+      Entry price (decimal string)
+    </ResponseField>
+    
+    <ResponseField name="status" type="string">
+      Position status - will be `LIQUIDATED` after successful liquidation
+    </ResponseField>
+    
+    <ResponseField name="opened_at" type="string">
+      ISO 8601 timestamp when position was opened
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string">
+      ISO 8601 timestamp when position was liquidated
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error Responses
+
+- **400 Bad Request**: Neither `position_id` nor `symbol` was provided
+- **404 Not Found**: No open position found matching the criteria
+- **500 Internal Server Error**: Failed to liquidate position
+
+### Example Request
+
+```bash Liquidate by Position ID
+curl -X POST https://api.neuratrade.com/api/v1/trading/liquidate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "position_id": "pos-20260303120000-1"
+  }'
+```
+
+```bash Liquidate by Symbol
+curl -X POST https://api.neuratrade.com/api/v1/trading/liquidate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "symbol": "BTC/USDT"
+  }'
+```
+
+### Example Response
+
+```json 200 Success
+{
+  "status": "success",
+  "data": {
+    "position_id": "pos-20260303120000-1",
+    "order_id": "ord-20260303120000-1",
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "size": "0.01",
+    "entry_price": "50000.00",
+    "status": "LIQUIDATED",
+    "opened_at": "2026-03-03T12:00:00Z",
+    "updated_at": "2026-03-03T12:10:00Z"
+  }
+}
+```
+
+```json 404 Not Found
+{
+  "status": "error",
+  "error": "open position not found"
+}
+```
+
+---
+
+## Liquidate All Positions
+
+### Request
+
+No request body required. All open positions will be liquidated.
+
+### Response
+
+<ResponseField name="status" type="string">
+  Response status: `"success"` or `"error"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container for liquidation results
+  
+  <Expandable title="data properties">
+    <ResponseField name="count" type="integer">
+      Number of positions liquidated
+    </ResponseField>
+    
+    <ResponseField name="positions" type="array">
+      Array of liquidated position records (see PositionRecord schema above)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```bash
+curl -X POST https://api.neuratrade.com/api/v1/trading/liquidate_all \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+### Example Response
+
+```json 200 Success
+{
+  "status": "success",
+  "data": {
+    "count": 2,
+    "positions": [
+      {
+        "position_id": "pos-20260303120000-1",
+        "order_id": "ord-20260303120000-1",
+        "exchange": "binance",
+        "symbol": "BTC/USDT",
+        "side": "BUY",
+        "size": "0.01",
+        "entry_price": "50000.00",
+        "status": "LIQUIDATED",
+        "opened_at": "2026-03-03T12:00:00Z",
+        "updated_at": "2026-03-03T12:15:00Z"
+      },
+      {
+        "position_id": "pos-20260303120000-2",
+        "order_id": "ord-20260303120000-2",
+        "exchange": "okx",
+        "symbol": "ETH/USDT",
+        "side": "SELL",
+        "size": "0.5",
+        "entry_price": "3000.00",
+        "status": "LIQUIDATED",
+        "opened_at": "2026-03-03T12:05:00Z",
+        "updated_at": "2026-03-03T12:15:00Z"
+      }
+    ]
+  }
+}
+```
+
+```json 200 No Open Positions
+{
+  "status": "success",
+  "data": {
+    "count": 0,
+    "positions": []
+  }
+}
+```
+
+## Liquidation Confirmation
+
+When a position is liquidated:
+
+1. **Position status** is updated to `LIQUIDATED`
+2. **Associated order status** is updated to `CLOSED`
+3. **Update timestamp** is set to the liquidation time
+4. **Position remains in database** for historical tracking and auditing
+
+<Warning>
+  Liquidation does NOT execute actual exchange orders. This endpoint only updates the internal position tracking state. For production use, integrate with exchange APIs to execute closing orders.
+</Warning>
+
+## Related Endpoints
+
+- [List Positions](/api/trading/positions) - View all positions including liquidated ones
+- [Cancel Order](/api/trading/cancel-order) - Cancel an order (closes associated position)

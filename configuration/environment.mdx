@@ -1,0 +1,386 @@
+---
+title: 'Environment Variables'
+description: 'Complete reference for NeuraTrade environment variables and configuration'
+---
+
+## Overview
+
+NeuraTrade uses environment variables for system configuration. Copy `.env.example` to `.env` in your repository root and configure the values for your deployment.
+
+<Warning>
+  Never commit `.env` files to version control. Use strong, randomly generated secrets in production.
+</Warning>
+
+## Quick Start
+
+```bash
+cp .env.example .env
+# Edit .env with your configuration
+```
+
+## Core Configuration
+
+### NeuraTrade Home Directory
+
+<ParamField path="NEURATRADE_HOME" type="string" required>
+  Absolute path to NeuraTrade config and data directory. This is where SQLite DB, Redis data, and logs will be stored.
+  
+  **Note:** Use an absolute path. Shell shortcuts like `~` are not expanded by all launch scripts.
+  
+  ```bash
+  NEURATRADE_HOME=/home/youruser/.neuratrade
+  ```
+</ParamField>
+
+### Network Configuration
+
+<ParamField path="BACKEND_HOST_PORT" type="number" required>
+  Single port exposed to host for backend API (use 5-digit port to avoid conflicts). Access NeuraTrade at `http://localhost:{port}`.
+  
+  ```bash
+  BACKEND_HOST_PORT=58080
+  ```
+</ParamField>
+
+<ParamField path="SERVER_PORT" type="number" default="8080">
+  Internal server port for the backend API service.
+</ParamField>
+
+<ParamField path="SERVER_HOST" type="string" default="0.0.0.0">
+  Server bind address. Use `0.0.0.0` to accept connections from all interfaces.
+</ParamField>
+
+<ParamField path="ENVIRONMENT" type="string" default="development">
+  Application environment mode.
+  
+  Options: `development`, `production`, `test`
+</ParamField>
+
+## Database Configuration
+
+### SQLite (Default)
+
+<Warning>
+  SQLite has a known startup issue with collector workers (neura-v7e6). Consider using PostgreSQL for full functionality.
+</Warning>
+
+<ParamField path="DATABASE_DRIVER" type="string" default="sqlite">
+  Database driver selection.
+  
+  Options: `sqlite`, `postgres`
+</ParamField>
+
+<ParamField path="SQLITE_PATH" type="string" required="when using SQLite">
+  Absolute path to SQLite database file. Should match your `NEURATRADE_HOME` setting.
+  
+  ```bash
+  SQLITE_PATH=/home/youruser/.neuratrade/neuratrade.db
+  ```
+</ParamField>
+
+### PostgreSQL (Production)
+
+<ParamField path="DATABASE_HOST" type="string" default="localhost">
+  PostgreSQL server hostname.
+</ParamField>
+
+<ParamField path="DATABASE_PORT" type="number" default="5432">
+  PostgreSQL server port.
+</ParamField>
+
+<ParamField path="DATABASE_USER" type="string" default="postgres">
+  PostgreSQL username.
+</ParamField>
+
+<ParamField path="DATABASE_PASSWORD" type="string" required="for PostgreSQL">
+  PostgreSQL password.
+  
+  <Warning>Change this in production - never use default passwords.</Warning>
+</ParamField>
+
+<ParamField path="DATABASE_DBNAME" type="string" default="neuratrade">
+  PostgreSQL database name.
+</ParamField>
+
+<ParamField path="DATABASE_SSLMODE" type="string" default="disable">
+  PostgreSQL SSL mode.
+  
+  Options: `disable`, `require`, `verify-ca`, `verify-full`
+</ParamField>
+
+<ParamField path="DATABASE_URL" type="string">
+  Complete PostgreSQL connection string (preferred for managed databases like Digital Ocean).
+  
+  Format: `postgres://username:password@host:port/dbname?sslmode=require`
+  
+  <Info>When set, this overrides individual database settings.</Info>
+</ParamField>
+
+### Connection Pool Settings
+
+<ParamField path="DATABASE_MAX_OPEN_CONNS" type="number" default="25">
+  Maximum number of open database connections (PostgreSQL only).
+</ParamField>
+
+<ParamField path="DATABASE_MAX_IDLE_CONNS" type="number" default="5">
+  Maximum number of idle database connections in the pool.
+</ParamField>
+
+<ParamField path="DATABASE_CONN_MAX_LIFETIME" type="duration" default="300s">
+  Maximum lifetime of a database connection.
+</ParamField>
+
+<ParamField path="DATABASE_CONN_MAX_IDLE_TIME" type="duration" default="60s">
+  Maximum time a connection can remain idle.
+</ParamField>
+
+## Redis Configuration
+
+<ParamField path="REDIS_HOST" type="string" default="localhost">
+  Redis server hostname.
+</ParamField>
+
+<ParamField path="REDIS_PORT" type="number" default="6379">
+  Redis server port.
+</ParamField>
+
+<ParamField path="REDIS_PASSWORD" type="string">
+  Redis authentication password (optional).
+</ParamField>
+
+<ParamField path="REDIS_DB" type="number" default="0">
+  Redis database number (0-15).
+</ParamField>
+
+## CCXT Service Configuration
+
+<ParamField path="CCXT_SERVICE_URL" type="string" default="http://localhost:3001">
+  URL for the CCXT exchange integration service.
+</ParamField>
+
+<ParamField path="CCXT_TIMEOUT" type="duration" default="30s">
+  Timeout for CCXT service requests.
+</ParamField>
+
+<ParamField path="PORT" type="number" default="3001">
+  Port for the CCXT service (used by ccxt-service component).
+</ParamField>
+
+## Telegram Configuration
+
+<ParamField path="TELEGRAM_BOT_TOKEN" type="string" required="for Telegram">
+  Telegram bot token from @BotFather.
+  
+  Get your token: https://t.me/BotFather
+</ParamField>
+
+<ParamField path="TELEGRAM_WEBHOOK_URL" type="string">
+  Public URL for webhook mode (production).
+  
+  ```bash
+  TELEGRAM_WEBHOOK_URL=https://your-domain.com/api/v1/telegram/webhook
+  ```
+</ParamField>
+
+<ParamField path="TELEGRAM_WEBHOOK_SECRET" type="string">
+  Secret to validate incoming webhook requests.
+  
+  Generate with: `openssl rand -base64 32`
+</ParamField>
+
+<ParamField path="TELEGRAM_USE_POLLING" type="boolean" default="true">
+  Use polling mode (development) vs webhook mode (production).
+</ParamField>
+
+<ParamField path="TELEGRAM_WEBHOOK_PATH" type="string" default="/telegram/webhook">
+  Path for the webhook endpoint.
+</ParamField>
+
+<ParamField path="TELEGRAM_PORT" type="number" default="3002">
+  Port for the Telegram service.
+</ParamField>
+
+<ParamField path="TELEGRAM_API_BASE_URL" type="string" default="http://localhost:8080">
+  URL of the backend-api service for Telegram to call.
+</ParamField>
+
+<ParamField path="RUN_TELEGRAM_SERVICE" type="boolean" default="true">
+  Enable/disable the Telegram service.
+</ParamField>
+
+<ParamField path="TELEGRAM_EXTERNAL_SERVICE" type="boolean" default="true">
+  Use external TypeScript Telegram service (disables legacy Go-based bot).
+</ParamField>
+
+## Security Configuration
+
+<ParamField path="JWT_SECRET" type="string" required>
+  Secret key for JWT token signing (minimum 32 characters).
+  
+  Generate with: `openssl rand -base64 32`
+  
+  <Warning>Change this in production - never use default values.</Warning>
+</ParamField>
+
+<ParamField path="BCRYPT_COST" type="number" default="12">
+  BCrypt hashing cost factor (higher = more secure but slower).
+  
+  Range: 4-31 (recommended: 10-14)
+</ParamField>
+
+<ParamField path="ADMIN_API_KEY" type="string" required>
+  API key for securing admin endpoints.
+  
+  Generate with: `openssl rand -base64 32`
+</ParamField>
+
+## External API Keys
+
+<ParamField path="COINMARKETCAP_API_KEY" type="string">
+  CoinMarketCap API key for market data (optional).
+</ParamField>
+
+## Logging Configuration
+
+<ParamField path="LOG_LEVEL" type="string" default="info">
+  Logging verbosity level.
+  
+  Options: `debug`, `info`, `warn`, `error`
+</ParamField>
+
+<ParamField path="LOG_FORMAT" type="string" default="json">
+  Log output format.
+  
+  Options: `json`, `text`
+</ParamField>
+
+## Feature Flags
+
+<ParamField path="FEATURE_TELEGRAM_BOT" type="boolean" default="true">
+  Enable Telegram bot integration.
+</ParamField>
+
+<ParamField path="FEATURE_WEB_INTERFACE" type="boolean" default="true">
+  Enable web interface.
+</ParamField>
+
+<ParamField path="FEATURE_REAL_TRADING" type="boolean" default="false">
+  Enable real trading (disable for paper trading only).
+  
+  <Warning>Only enable this when you're ready for live trading with real funds.</Warning>
+</ParamField>
+
+<ParamField path="FEATURE_PAPER_TRADING" type="boolean" default="true">
+  Enable paper trading simulation.
+</ParamField>
+
+## Monitoring Configuration
+
+<ParamField path="METRICS_ENABLED" type="boolean" default="true">
+  Enable Prometheus metrics collection.
+</ParamField>
+
+<ParamField path="METRICS_PORT" type="number" default="9090">
+  Port for exposing Prometheus metrics.
+</ParamField>
+
+## Market Data Configuration
+
+<ParamField path="MARKET_DATA_COLLECTION_INTERVAL" type="duration" default="30s">
+  Interval for collecting market data from exchanges.
+</ParamField>
+
+<ParamField path="MARKET_DATA_BATCH_SIZE" type="number" default="100">
+  Number of symbols to process in each batch.
+</ParamField>
+
+## Arbitrage Configuration
+
+<ParamField path="ARBITRAGE_MIN_PROFIT_THRESHOLD" type="number" default="0.5">
+  Minimum profit threshold percentage for arbitrage opportunities.
+</ParamField>
+
+<ParamField path="ARBITRAGE_MAX_TRADE_AMOUNT" type="number" default="1000.0">
+  Maximum trade amount for arbitrage in quote currency.
+</ParamField>
+
+<ParamField path="ARBITRAGE_CHECK_INTERVAL" type="duration" default="10s">
+  Interval for checking arbitrage opportunities.
+</ParamField>
+
+## Technical Analysis Configuration
+
+<ParamField path="TA_CALCULATION_INTERVAL" type="duration" default="60s">
+  Interval for calculating technical indicators.
+</ParamField>
+
+## Test Environment (Development Only)
+
+<Warning>
+  These variables should only be used in development/testing environments.
+</Warning>
+
+<ParamField path="TEST_JWT_SECRET" type="string">
+  JWT secret for testing (development only).
+</ParamField>
+
+<ParamField path="TEST_DB_PASSWORD" type="string">
+  Database password for testing (development only).
+</ParamField>
+
+## Environment Variable Precedence
+
+1. Explicitly set environment variables
+2. `.env` file in repository root
+3. Default values from `.env.example`
+4. Application defaults
+
+## Security Best Practices
+
+<Warning>
+  Follow these security guidelines for production deployments:
+</Warning>
+
+1. **Generate Strong Secrets**: Use `openssl rand -base64 32` for all secrets
+2. **Never Commit Secrets**: Add `.env` to `.gitignore`
+3. **Use Environment-Specific Configs**: Separate `.env` files for dev/staging/prod
+4. **Rotate Credentials**: Regularly update API keys and secrets
+5. **Limit Permissions**: Use read-only database users where possible
+6. **Enable SSL/TLS**: Use secure connections for databases and external services
+7. **Monitor Access**: Enable audit logging for admin operations
+
+## Example Production Configuration
+
+```bash .env
+# Core
+NEURATRADE_HOME=/var/lib/neuratrade
+BACKEND_HOST_PORT=58080
+ENVIRONMENT=production
+
+# Database (PostgreSQL)
+DATABASE_DRIVER=postgres
+DATABASE_URL=postgres://neuratrade:STRONG_PASSWORD@db.example.com:5432/neuratrade?sslmode=require
+
+# Redis
+REDIS_HOST=redis.example.com
+REDIS_PORT=6379
+REDIS_PASSWORD=STRONG_REDIS_PASSWORD
+
+# Security
+JWT_SECRET=GENERATED_SECRET_HERE
+ADMIN_API_KEY=GENERATED_API_KEY_HERE
+
+# Telegram
+TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+TELEGRAM_USE_POLLING=false
+TELEGRAM_WEBHOOK_URL=https://neuratrade.example.com/api/v1/telegram/webhook
+TELEGRAM_WEBHOOK_SECRET=GENERATED_WEBHOOK_SECRET
+
+# Features
+FEATURE_REAL_TRADING=true
+FEATURE_PAPER_TRADING=false
+
+# Monitoring
+METRICS_ENABLED=true
+LOG_LEVEL=info
+```

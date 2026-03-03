@@ -1,0 +1,245 @@
+---
+title: Place Order
+api: POST /api/v1/trading/place_order
+description: Place a trading order on a configured exchange
+---
+
+Place a new trading order. The endpoint validates the request, performs risk checks, and creates both an order record and a corresponding position record in the database.
+
+<Warning>
+  This endpoint executes real trades on live exchanges. Ensure you have validated your trading parameters and risk limits before placing orders.
+</Warning>
+
+## Request Body
+
+<ParamField body="exchange" type="string" required>
+  Exchange identifier (e.g., "binance", "okx")
+</ParamField>
+
+<ParamField body="symbol" type="string" required>
+  Trading pair symbol (e.g., "BTC/USDT", "ETH/USDT")
+</ParamField>
+
+<ParamField body="side" type="string" required>
+  Order side. Must be either:
+  - `BUY` - Open a long position
+  - `SELL` - Open a short position
+</ParamField>
+
+<ParamField body="type" type="string" default="MARKET">
+  Order type. Supported values:
+  - `MARKET` - Execute at current market price (default)
+  - `LIMIT` - Execute at specified price or better
+</ParamField>
+
+<ParamField body="amount" type="string" required>
+  Order amount as a decimal string. Must be greater than zero.
+  
+  Example: `"0.5"` for 0.5 units
+</ParamField>
+
+<ParamField body="price" type="string">
+  Limit price as a decimal string. Required for `LIMIT` orders, ignored for `MARKET` orders.
+  Must be greater than zero when specified.
+  
+  Example: `"50000.00"`
+</ParamField>
+
+## Response
+
+<ResponseField name="status" type="string">
+  Response status: `"success"` or `"error"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container for order and position data
+  
+  <Expandable title="data properties">
+    <ResponseField name="order" type="OrderRecord">
+      Created order details
+      
+      <Expandable title="OrderRecord properties">
+        <ResponseField name="order_id" type="string">
+          Unique order identifier (format: `ord-YYYYMMDDHHMMSS-sequence`)
+        </ResponseField>
+        
+        <ResponseField name="position_id" type="string">
+          Associated position identifier
+        </ResponseField>
+        
+        <ResponseField name="exchange" type="string">
+          Exchange where order was placed
+        </ResponseField>
+        
+        <ResponseField name="symbol" type="string">
+          Trading pair symbol
+        </ResponseField>
+        
+        <ResponseField name="side" type="string">
+          Order side (`BUY` or `SELL`)
+        </ResponseField>
+        
+        <ResponseField name="type" type="string">
+          Order type (`MARKET` or `LIMIT`)
+        </ResponseField>
+        
+        <ResponseField name="amount" type="string">
+          Order amount (decimal string)
+        </ResponseField>
+        
+        <ResponseField name="price" type="string">
+          Order price (decimal string)
+        </ResponseField>
+        
+        <ResponseField name="status" type="string">
+          Order status (`OPEN`, `CANCELED`, `CLOSED`)
+        </ResponseField>
+        
+        <ResponseField name="created_at" type="string">
+          ISO 8601 timestamp when order was created
+        </ResponseField>
+        
+        <ResponseField name="updated_at" type="string">
+          ISO 8601 timestamp when order was last updated
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="position" type="PositionRecord">
+      Created position details
+      
+      <Expandable title="PositionRecord properties">
+        <ResponseField name="position_id" type="string">
+          Unique position identifier (format: `pos-YYYYMMDDHHMMSS-sequence`)
+        </ResponseField>
+        
+        <ResponseField name="order_id" type="string">
+          Opening order identifier
+        </ResponseField>
+        
+        <ResponseField name="exchange" type="string">
+          Exchange where position is held
+        </ResponseField>
+        
+        <ResponseField name="symbol" type="string">
+          Trading pair symbol
+        </ResponseField>
+        
+        <ResponseField name="side" type="string">
+          Position side (`BUY` or `SELL`)
+        </ResponseField>
+        
+        <ResponseField name="size" type="string">
+          Position size (decimal string)
+        </ResponseField>
+        
+        <ResponseField name="entry_price" type="string">
+          Entry price (decimal string)
+        </ResponseField>
+        
+        <ResponseField name="status" type="string">
+          Position status (`OPEN`, `CLOSED`, `LIQUIDATED`)
+        </ResponseField>
+        
+        <ResponseField name="opened_at" type="string">
+          ISO 8601 timestamp when position was opened
+        </ResponseField>
+        
+        <ResponseField name="updated_at" type="string">
+          ISO 8601 timestamp when position was last updated
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Validation Errors
+
+The endpoint returns `400 Bad Request` for the following validation failures:
+
+- **Invalid payload**: Request body does not match expected schema
+- **Amount validation**: `"amount must be greater than zero"`
+- **Side validation**: `"side must be BUY or SELL"`
+- **Type validation**: `"type must be MARKET or LIMIT"`
+- **Price validation**: `"price must be greater than zero for LIMIT orders"`
+
+## Risk Checks
+
+<Warning>
+  Before placing orders, ensure:
+  - Exchange API keys are configured with appropriate permissions
+  - Sufficient balance is available on the exchange
+  - Order size complies with exchange minimum/maximum limits
+  - Risk management parameters (daily loss cap, position size limits) are configured
+</Warning>
+
+## Example Request
+
+```bash Market Order
+curl -X POST https://api.neuratrade.com/api/v1/trading/place_order \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "type": "MARKET",
+    "amount": "0.01"
+  }'
+```
+
+```bash Limit Order
+curl -X POST https://api.neuratrade.com/api/v1/trading/place_order \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "exchange": "binance",
+    "symbol": "ETH/USDT",
+    "side": "BUY",
+    "type": "LIMIT",
+    "amount": "0.5",
+    "price": "3000.00"
+  }'
+```
+
+## Example Response
+
+```json 201 Created
+{
+  "status": "success",
+  "data": {
+    "order": {
+      "order_id": "ord-20260303120000-1",
+      "position_id": "pos-20260303120000-1",
+      "exchange": "binance",
+      "symbol": "BTC/USDT",
+      "side": "BUY",
+      "type": "MARKET",
+      "amount": "0.01",
+      "price": "0",
+      "status": "OPEN",
+      "created_at": "2026-03-03T12:00:00Z",
+      "updated_at": "2026-03-03T12:00:00Z"
+    },
+    "position": {
+      "position_id": "pos-20260303120000-1",
+      "order_id": "ord-20260303120000-1",
+      "exchange": "binance",
+      "symbol": "BTC/USDT",
+      "side": "BUY",
+      "size": "0.01",
+      "entry_price": "0",
+      "status": "OPEN",
+      "opened_at": "2026-03-03T12:00:00Z",
+      "updated_at": "2026-03-03T12:00:00Z"
+    }
+  }
+}
+```
+
+```json 400 Validation Error
+{
+  "status": "error",
+  "error": "amount must be greater than zero"
+}
+```

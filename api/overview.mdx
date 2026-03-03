@@ -1,0 +1,285 @@
+---
+title: API Overview
+description: Overview of the NeuraTrade REST API including base URLs, versioning, response formats, and error handling
+---
+
+## Introduction
+
+The NeuraTrade API is a RESTful API that provides programmatic access to trading analytics, market data, arbitrage opportunities, and autonomous trading features. All endpoints return JSON responses and use standard HTTP response codes.
+
+## Base URL
+
+The API is accessible at:
+
+```
+http://localhost:8080
+```
+
+<Note>
+In production environments, replace `localhost:8080` with your deployed API URL.
+</Note>
+
+## API Versioning
+
+All API endpoints are versioned and mounted under the `/api/v1` prefix:
+
+```
+http://localhost:8080/api/v1
+```
+
+**Example endpoints:**
+- Market data: `GET /api/v1/market/prices`
+- Arbitrage: `GET /api/v1/arbitrage/opportunities`
+- User profile: `GET /api/v1/users/profile`
+
+## Response Format
+
+All API responses follow a consistent JSON structure:
+
+### Successful Response
+
+```json
+{
+  "status": "success",
+  "data": {
+    // Response payload
+  },
+  "timestamp": "2026-03-03T10:30:00Z"
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Error message",
+  "message": "Detailed error description",
+  "code": "ERROR_CODE"
+}
+```
+
+<ResponseField name="status" type="string">
+  Response status: `"success"` or `"error"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Main response payload (present in successful responses)
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message (present in error responses)
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Additional context or description
+</ResponseField>
+
+<ResponseField name="code" type="string">
+  Machine-readable error code for client handling
+</ResponseField>
+
+## HTTP Status Codes
+
+The API uses standard HTTP status codes:
+
+| Status Code | Description |
+|-------------|-------------|
+| `200` | Success - Request completed successfully |
+| `201` | Created - Resource created successfully |
+| `400` | Bad Request - Invalid request parameters |
+| `401` | Unauthorized - Authentication required or failed |
+| `403` | Forbidden - Insufficient permissions |
+| `404` | Not Found - Resource does not exist |
+| `409` | Conflict - Resource already exists |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server-side error |
+| `503` | Service Unavailable - Service temporarily unavailable |
+
+## Error Handling
+
+### Common Error Codes
+
+<ResponseField name="ADMIN_AUTH_FAILED" type="string">
+  Admin authentication required for this endpoint
+</ResponseField>
+
+<ResponseField name="INVALID_TOKEN" type="string">
+  JWT token is invalid or expired
+</ResponseField>
+
+<ResponseField name="RATE_LIMIT_EXCEEDED" type="string">
+  Rate limit threshold exceeded for your API key or IP address
+</ResponseField>
+
+### Error Response Example
+
+```json
+{
+  "error": "Unauthorized",
+  "message": "Valid admin API key required for this endpoint",
+  "code": "ADMIN_AUTH_FAILED"
+}
+```
+
+## Rate Limiting
+
+The API implements rate limiting to ensure fair usage and system stability.
+
+### Rate Limit Headers
+
+All API responses include rate limit information in the headers:
+
+<ResponseField name="X-RateLimit-Limit" type="integer">
+  Maximum number of requests allowed in the current window
+</ResponseField>
+
+<ResponseField name="X-RateLimit-Remaining" type="integer">
+  Number of requests remaining in the current window
+</ResponseField>
+
+<ResponseField name="X-RateLimit-Reset" type="integer">
+  Unix timestamp when the rate limit window resets
+</ResponseField>
+
+<ResponseField name="X-RateLimit-Policy" type="string">
+  Rate limit policy identifier (e.g., `"rate_limit_exceeded"`)
+</ResponseField>
+
+### Default Limits
+
+- **Default**: 100 requests per minute per IP address
+- **Authenticated**: Higher limits based on subscription tier
+- **Admin endpoints**: Separate rate limits with higher thresholds
+
+### Rate Limit Exceeded Response
+
+When rate limits are exceeded, the API returns HTTP 429:
+
+```json
+{
+  "error": "Rate limit exceeded",
+  "retry_after": 42
+}
+```
+
+<ResponseField name="retry_after" type="integer">
+  Number of seconds to wait before retrying the request
+</ResponseField>
+
+<Note>
+Health check endpoints (`/health`, `/ready`, `/live`) are exempt from rate limiting.
+</Note>
+
+## Health Check Endpoints
+
+The API provides multiple health check endpoints for monitoring:
+
+### System Health
+
+```bash
+GET /health
+HEAD /health
+```
+
+Returns overall system health including database, Redis, and CCXT service status.
+
+### Readiness Check
+
+```bash
+GET /ready
+```
+
+Indicates if the service is ready to accept traffic.
+
+### Liveness Check
+
+```bash
+GET /live
+```
+
+Indicates if the service is running (basic health probe).
+
+**Health Response Example:**
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-03-03T10:30:00Z",
+  "services": {
+    "database": "up",
+    "redis": "up",
+    "ccxt": "up"
+  },
+  "version": "1.0.0",
+  "uptime": "24h15m30s"
+}
+```
+
+## Request Headers
+
+### Common Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authenticated endpoints: `Bearer <jwt_token>`
+</ParamField>
+
+<ParamField header="X-API-Key" type="string">
+  Admin API key for admin-protected endpoints
+</ParamField>
+
+<ParamField header="Content-Type" type="string" default="application/json">
+  Request content type (for POST/PUT requests)
+</ParamField>
+
+## Pagination
+
+Endpoints returning lists support pagination through query parameters:
+
+<ParamField query="limit" type="integer" default="50">
+  Number of items to return (max 100)
+</ParamField>
+
+<ParamField query="offset" type="integer" default="0">
+  Number of items to skip
+</ParamField>
+
+**Paginated Response Example:**
+
+```json
+{
+  "data": [
+    // ... items
+  ],
+  "pagination": {
+    "limit": 50,
+    "offset": 0,
+    "total": 150
+  }
+}
+```
+
+## Environment-Specific Behavior
+
+<Warning>
+In production environments (`ENVIRONMENT=production` or `GIN_MODE=release`), stricter security validations are enforced:
+- Admin API keys must be explicitly configured
+- JWT secrets must be at least 32 characters
+- Default or example credentials are rejected
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Learn about JWT tokens and API key authentication
+  </Card>
+  <Card title="Market Data" icon="chart-line" href="/api/market">
+    Access real-time market prices and orderbook data
+  </Card>
+  <Card title="Arbitrage" icon="arrows-rotate" href="/api/arbitrage">
+    Discover arbitrage opportunities across exchanges
+  </Card>
+  <Card title="Trading" icon="robot" href="/api/trading">
+    Execute trades and manage positions
+  </Card>
+</CardGroup>

@@ -1,0 +1,323 @@
+---
+title: "Quests API"
+description: "Manage autonomous trading quests - scheduled tasks that execute trading strategies and portfolio monitoring."
+---
+
+# Quests API
+
+Quests are autonomous tasks that execute on schedules or triggers. Each quest represents a trading strategy, portfolio check, or market scan that runs without manual intervention.
+
+## Get Quest Progress
+
+<RequestExample>
+```bash
+curl -X GET "https://api.neuratrade.ai/api/v1/telegram/internal/quests?chat_id=YOUR_CHAT_ID" \
+  -H "X-Admin-API-Key: YOUR_ADMIN_KEY"
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "quests": [
+    {
+      "quest_id": "scalping_btc_usdt",
+      "quest_name": "BTC/USDT Scalping",
+      "current": 42,
+      "target": 100,
+      "percent": 42,
+      "status": "active",
+      "time_remaining": "2h 15m"
+    }
+  ],
+  "updated_at": "2026-03-03T10:30:00Z"
+}
+```
+</ResponseExample>
+
+Retrieves progress for all active quests associated with a chat/user.
+
+### Query Parameters
+
+<ParamField query="chat_id" type="string" required>
+  Telegram chat ID to fetch quests for
+</ParamField>
+
+### Response Fields
+
+<ResponseField name="quests" type="array">
+  List of quest progress objects
+  
+  <Expandable title="Quest Progress Object">
+    <ResponseField name="quest_id" type="string">
+      Unique quest identifier
+    </ResponseField>
+    
+    <ResponseField name="quest_name" type="string">
+      Human-readable quest name
+    </ResponseField>
+    
+    <ResponseField name="current" type="integer">
+      Current execution count or progress value
+    </ResponseField>
+    
+    <ResponseField name="target" type="integer">
+      Target execution count or goal value
+    </ResponseField>
+    
+    <ResponseField name="percent" type="integer">
+      Progress percentage (0-100)
+    </ResponseField>
+    
+    <ResponseField name="status" type="string">
+      Quest status: `pending`, `active`, `completed`, `failed`, `paused`
+    </ResponseField>
+    
+    <ResponseField name="time_remaining" type="string">
+      Estimated time to completion (optional)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of last update
+</ResponseField>
+
+---
+
+## Get Quest Diagnostics
+
+<RequestExample>
+```bash
+curl -X GET "https://api.neuratrade.ai/api/v1/telegram/internal/quests/diagnostics?chat_id=YOUR_CHAT_ID" \
+  -H "X-Admin-API-Key: YOUR_ADMIN_KEY"
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "chat_id": "123456789",
+  "autonomous": true,
+  "started_at": "2026-03-03T08:00:00Z",
+  "active_quests": 3,
+  "quest_progress": [
+    {
+      "quest_id": "scalping_btc_usdt",
+      "current": 42,
+      "target": 100,
+      "status": "active"
+    }
+  ],
+  "quest_runtime": {
+    "risk_lock_active": false,
+    "cadence_mode": "active",
+    "last_tick_at": "2026-03-03T10:29:55Z"
+  },
+  "safety_status": {
+    "is_safe": true,
+    "trading_allowed": true,
+    "max_position_size": "500.00",
+    "current_drawdown": "2.50%",
+    "position_throttle": "100%"
+  },
+  "timestamp": "2026-03-03T10:30:00Z"
+}
+```
+</ResponseExample>
+
+Retrieves detailed diagnostics including quest state, risk status, and runtime metrics.
+
+### Query Parameters
+
+<ParamField query="chat_id" type="string" required>
+  Telegram chat ID to fetch diagnostics for
+</ParamField>
+
+### Response Fields
+
+<ResponseField name="chat_id" type="string">
+  Chat identifier
+</ResponseField>
+
+<ResponseField name="autonomous" type="boolean">
+  Whether autonomous mode is active
+</ResponseField>
+
+<ResponseField name="started_at" type="string">
+  ISO 8601 timestamp when autonomous mode started
+</ResponseField>
+
+<ResponseField name="active_quests" type="integer">
+  Count of currently running quests
+</ResponseField>
+
+<ResponseField name="quest_runtime" type="object">
+  Quest engine runtime diagnostics
+  
+  <Expandable title="Runtime Fields">
+    <ResponseField name="risk_lock_active" type="boolean">
+      Whether risk lock is preventing new trades
+    </ResponseField>
+    
+    <ResponseField name="cadence_mode" type="string">
+      Current execution cadence: `active`, `normal`, `degraded`, `idle`
+    </ResponseField>
+    
+    <ResponseField name="last_tick_at" type="string">
+      ISO 8601 timestamp of last scheduler tick
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="safety_status" type="object">
+  Portfolio safety metrics (see [Budget API](/api/autonomous/budget) for details)
+</ResponseField>
+
+---
+
+## Quest Schema
+
+Quests are defined by the following structure stored in the quest engine:
+
+### Quest Object
+
+<ResponseField name="id" type="string">
+  Unique quest identifier (UUID)
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Human-readable quest name
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Detailed description of quest purpose
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Quest type:
+  - `routine` - Time-triggered recurring tasks
+  - `triggered` - Event-driven execution
+  - `goal` - Milestone-based quests
+  - `arbitrage` - Arbitrage opportunity execution
+</ResponseField>
+
+<ResponseField name="cadence" type="string">
+  For routine quests:
+  - `micro` - Every 1-5 minutes
+  - `hourly` - Once per hour
+  - `daily` - Once per day
+  - `weekly` - Once per week
+  - `onetime` - Single execution
+</ResponseField>
+
+<ResponseField name="schedule" type="string">
+  Cron expression for custom schedules (optional). Example: `*/5 * * * *` for every 5 minutes.
+</ResponseField>
+
+<ResponseField name="priority" type="string">
+  Execution priority: `CRITICAL`, `HIGH`, `NORMAL`, `LOW`
+</ResponseField>
+
+<ResponseField name="status" type="string">
+  Current status: `pending`, `active`, `completed`, `failed`, `paused`
+</ResponseField>
+
+<ResponseField name="next_run" type="string">
+  ISO 8601 timestamp of next scheduled execution
+</ResponseField>
+
+<ResponseField name="last_executed_at" type="string">
+  ISO 8601 timestamp of last execution
+</ResponseField>
+
+<ResponseField name="checkpoint" type="object">
+  Quest-specific progress data (varies by quest type)
+</ResponseField>
+
+---
+
+## Quest Scheduling
+
+### Cron Scheduling
+
+Quests support cron expressions for flexible scheduling:
+
+```json
+{
+  "cron_expr": "*/15 * * * *",
+  "description": "Run every 15 minutes"
+}
+```
+
+Common patterns:
+- `*/5 * * * *` - Every 5 minutes
+- `0 * * * *` - Every hour at :00
+- `0 0 * * *` - Daily at midnight
+- `0 9,17 * * 1-5` - Weekdays at 9 AM and 5 PM
+
+### Event Triggers
+
+Event-driven quests execute when specific conditions are met:
+
+- **Price Movement**: Trigger when price crosses threshold
+- **Funding Rate**: Execute when funding rate anomaly detected
+- **Portfolio Health**: Run when drawdown or exposure exceeds limit
+- **Order Fill**: Trigger follow-up actions after order execution
+
+<Warning>
+  Quest execution is subject to risk locks. If `risk_lock_active` is `true`, new trading quests will be blocked until safety conditions are restored.
+</Warning>
+
+---
+
+## Quest Types
+
+### Scalping Quests
+
+Execute scalping strategies on configured pairs:
+
+```json
+{
+  "type": "routine",
+  "cadence": "micro",
+  "checkpoint": {
+    "symbol": "BTC/USDT:USDT",
+    "side": "buy",
+    "entry_price": "65432.10",
+    "current_positions": 2,
+    "max_positions": 3
+  }
+}
+```
+
+### Market Scanner
+
+Scans markets for opportunities every 5 minutes:
+
+```json
+{
+  "type": "routine",
+  "cadence": "micro",
+  "checkpoint": {
+    "last_scan_time": "2026-03-03T10:25:00Z",
+    "status": "scanning"
+  }
+}
+```
+
+### Portfolio Health Check
+
+Monitors portfolio metrics hourly:
+
+```json
+{
+  "type": "routine",
+  "cadence": "hourly",
+  "checkpoint": {
+    "last_health_check": "2026-03-03T10:00:00Z",
+    "status": "healthy",
+    "chat_id": "123456789"
+  }
+}
+```

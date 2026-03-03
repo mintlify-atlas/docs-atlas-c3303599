@@ -1,80 +1,322 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+description: "Get NeuraTrade running in under 5 minutes"
 ---
 
-## Get started in three steps
+## Get Started in 5 Minutes
 
-Get your documentation site running locally and make your first customization.
+This guide will have you running NeuraTrade and viewing your first arbitrage opportunities in under 5 minutes.
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Clone the Repository">
+    Clone NeuraTrade from GitHub:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```bash
+    git clone https://github.com/irfndi/neuratrade.git
+    cd neuratrade
+    ```
+  </Step>
+
+  <Step title="Configure Environment">
+    Copy the example environment file and update it with your settings:
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    ```bash
+    cp .env.example .env
+    ```
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    Edit `.env` to set your home directory path:
+    
+    ```bash .env
+    # Minimum required configuration
+    NEURATRADE_HOME=/home/youruser/.neuratrade
+    BACKEND_HOST_PORT=58080
+    DATABASE_DRIVER=sqlite
+    SQLITE_PATH=/home/youruser/.neuratrade/neuratrade.db
+    ```
+    
+    <Note>
+      Replace `/home/youruser` with your actual home directory path. Use `pwd` to find your current path.
+    </Note>
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Build NeuraTrade">
+    Build all binaries using the Makefile:
+    
+    ```bash
+    make build
+    ```
+    
+    This will:
+    - Download Go dependencies
+    - Install Telegram service dependencies (Bun)
+    - Build `neuratrade-server` (Go backend)
+    - Build `neuratrade` (CLI gateway)
+    - Create service launcher scripts
+    
+    Binaries are output to `./bin/`:
+    
+    ```bash
+    ls -la bin/
+    # neuratrade-server  - Backend API server
+    # neuratrade         - Gateway CLI
+    # ccxt-service       - Exchange bridge stub
+    # telegram-service   - Telegram bot launcher
+    ```
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Start All Services">
+    Start the NeuraTrade gateway (orchestrates all services):
+    
+    ```bash
+    ./bin/neuratrade gateway start
+    ```
+    
+    This starts:
+    - Backend API server (port 8080)
+    - CCXT exchange service (port 3001)  
+    - Telegram bot service (port 3002)
+    
+    <Note>
+      The gateway runs services in the background. Logs are written to `~/.neuratrade/logs/`
+    </Note>
+  </Step>
 
-### Step 3: Go live
+  <Step title="Check Health">
+    Verify all services are running:
+    
+    <CodeGroup>
+    
+    ```bash CLI Command
+    ./bin/neuratrade gateway status
+    ```
+    
+    ```bash HTTP Request
+    curl -s http://localhost:8080/health | jq
+    ```
+    
+    </CodeGroup>
+    
+    Expected response:
+    
+    ```json
+    {
+      "status": "ok",
+      "timestamp": "2026-03-03T10:30:00Z",
+      "version": "dev",
+      "services": {
+        "database": "up",
+        "redis": "up"
+      }
+    }
+    ```
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="View Arbitrage Opportunities">
+    Query for current arbitrage opportunities:
+    
+    ```bash
+    curl -s http://localhost:8080/api/v1/arbitrage/opportunities | jq
+    ```
+    
+    Example response:
+    
+    ```json
+    {
+      "opportunities": [
+        {
+          "symbol": "BTC/USDT",
+          "buy_exchange": "binance",
+          "sell_exchange": "okx",
+          "buy_price": 43250.00,
+          "sell_price": 43420.00,
+          "profit_percentage": 0.39,
+          "volume_24h": 1250000,
+          "timestamp": "2026-03-03T10:30:15Z"
+        }
+      ]
+    }
+    ```
+    
+    <Tip>
+      Install `jq` for pretty-printed JSON: `brew install jq` (macOS) or `apt install jq` (Linux)
+    </Tip>
+  </Step>
+</Steps>
 
-## Next steps
-
-Now that you have your docs running, explore these key features:
+## What's Next?
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Configure Exchanges"
+    icon="building-columns"
+    href="/configuration/exchanges"
+  >
+    Add your exchange API keys to enable trading
+  </Card>
+  <Card
+    title="Setup Telegram Bot"
+    icon="paper-plane"
+    href="/configuration/telegram"
+  >
+    Configure Telegram for notifications and bot commands
+  </Card>
+  <Card
+    title="Enable AI Agents"
+    icon="brain"
+    href="/configuration/ai-agents"
+  >
+    Setup autonomous trading with AI-powered agents
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference"
+  >
+    Explore the complete API documentation
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Common Commands
+
+Here are the most frequently used commands:
+
+<CodeGroup>
+
+```bash Start Services
+./bin/neuratrade gateway start
+```
+
+```bash Check Status
+./bin/neuratrade gateway status
+```
+
+```bash View Logs
+tail -f ~/.neuratrade/logs/gateway.log
+```
+
+```bash Stop Services
+./bin/neuratrade gateway stop
+```
+
+```bash Restart Services
+./bin/neuratrade gateway stop && ./bin/neuratrade gateway start
+```
+
+</CodeGroup>
+
+## Explore the API
+
+Now that NeuraTrade is running, explore these endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | Service health and status |
+| `/api/v1/market/prices` | Real-time market prices |
+| `/api/v1/arbitrage/opportunities` | Spot arbitrage opportunities |
+| `/api/v1/futures-arbitrage/opportunities` | Funding rate arbitrage |
+| `/api/v1/analysis/signals` | Trading signals and indicators |
+| `/api/v1/exchanges/supported` | List of supported exchanges |
+
+<CodeGroup>
+
+```bash Market Prices
+curl -s http://localhost:8080/api/v1/market/prices | jq
+```
+
+```bash Futures Arbitrage
+curl -s http://localhost:8080/api/v1/futures-arbitrage/opportunities | jq
+```
+
+```bash Trading Signals
+curl -s http://localhost:8080/api/v1/analysis/signals | jq
+```
+
+```bash Supported Exchanges
+curl -s http://localhost:8080/api/v1/exchanges/supported | jq
+```
+
+</CodeGroup>
+
+## Development Workflow
+
+For active development, use these commands:
+
+```bash
+# Run tests
+make test
+
+# Run linter
+make lint
+
+# Type checking (TypeScript services)
+make typecheck
+
+# Code formatting
+make fmt
+
+# Coverage check
+make coverage-check
+```
+
+<Warning>
+  Make sure to run `make test` and `make lint` before committing changes. The CI pipeline enforces these checks.
+</Warning>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Port 8080 already in use">
+    If port 8080 is already in use, change the `SERVER_PORT` in your `.env` file:
+    
+    ```bash .env
+    SERVER_PORT=8081
+    BACKEND_HOST_PORT=58081
+    ```
+    
+    Then restart the gateway.
+  </Accordion>
+
+  <Accordion title="Database connection failed">
+    Ensure the `NEURATRADE_HOME` directory exists and the SQLite path is correct:
+    
+    ```bash
+    mkdir -p ~/.neuratrade
+    # Update SQLITE_PATH in .env to match
+    ```
+  </Accordion>
+
+  <Accordion title="Gateway won't start">
+    Check the gateway logs for errors:
+    
+    ```bash
+    tail -100 ~/.neuratrade/logs/gateway.log
+    ```
+    
+    Common issues:
+    - Missing dependencies (run `make build` again)
+    - Port conflicts (change ports in `.env`)
+    - Permission issues (check file permissions)
+  </Accordion>
+
+  <Accordion title="No arbitrage opportunities found">
+    This is normal if:
+    - Market conditions don't present profitable opportunities
+    - Exchange workers are still collecting initial data (wait 30-60 seconds)
+    - Exchanges are not configured (see Configuration guide)
+    
+    Check worker status:
+    ```bash
+    curl -s http://localhost:8080/api/v1/market/workers/status | jq
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<Card
+  title="Detailed Installation Guide"
+  icon="book"
+  href="/installation"
+>
+  Learn about prerequisites, directory structure, and advanced configuration options
+</Card>

@@ -1,122 +1,163 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "NeuraTrade",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0EA5E9",
+    "light": "#38BDF8",
+    "dark": "#0284C7"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/irfndi/NeuraTrade"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/irfndi/NeuraTrade"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Features",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "features/arbitrage-detection",
+              "features/autonomous-trading",
+              "features/ai-agents",
+              "features/risk-management",
+              "features/telegram-bot"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Configuration",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "configuration/environment",
+              "configuration/exchanges",
+              "configuration/ai-providers",
+              "configuration/risk-settings"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Guides",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/native-deployment",
+              "guides/gateway-cli",
+              "guides/telegram-setup",
+              "guides/monitoring"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "api/overview",
+              "api/authentication"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Market Data",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/market/tickers",
+              "api/market/orderbook",
+              "api/market/status"
+            ]
+          },
+          {
+            "group": "Trading",
+            "pages": [
+              "api/trading/place-order",
+              "api/trading/cancel-order",
+              "api/trading/positions",
+              "api/trading/liquidate"
+            ]
+          },
+          {
+            "group": "Arbitrage",
+            "pages": [
+              "api/arbitrage/opportunities",
+              "api/arbitrage/futures",
+              "api/arbitrage/history"
+            ]
+          },
+          {
+            "group": "Analysis",
+            "pages": [
+              "api/analysis/signals",
+              "api/analysis/indicators"
+            ]
+          },
+          {
+            "group": "Autonomous Operations",
+            "pages": [
+              "api/autonomous/quests",
+              "api/autonomous/agents",
+              "api/autonomous/budget"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api/system/health",
+              "api/system/exchanges",
+              "api/system/cache"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/gateway",
+              "cli/status",
+              "cli/exchanges",
+              "cli/ai-models"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Architecture",
+        "groups": [
+          {
+            "group": "System Design",
+            "pages": [
+              "architecture/overview",
+              "architecture/services",
+              "architecture/data-flow",
+              "architecture/quest-engine"
+            ]
+          },
+          {
+            "group": "AI System",
+            "pages": [
+              "architecture/ai/agents",
+              "architecture/ai/skills",
+              "architecture/ai/reasoning"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

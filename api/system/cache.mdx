@@ -1,0 +1,483 @@
+---
+title: 'Cache Management'
+description: 'Monitor and manage Redis cache performance'
+---
+
+## Overview
+
+Cache management endpoints provide visibility into Redis cache performance, hit/miss rates, and memory usage. These endpoints help optimize caching strategies and diagnose performance issues.
+
+## GET /api/v1/cache/stats
+
+Get cache statistics for all categories.
+
+### Request
+
+```bash
+curl http://localhost:3000/api/v1/cache/stats
+```
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Operation success indicator
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Cache statistics grouped by category
+  
+  <Expandable title="data">
+    <ResponseField name="[category]" type="object">
+      Statistics for a specific cache category (e.g., `market_data`, `funding_rates`, `exchanges`, `overall`)
+      
+      <Expandable title="category stats">
+        <ResponseField name="hits" type="integer" required>
+          Number of cache hits for this category
+        </ResponseField>
+        
+        <ResponseField name="misses" type="integer" required>
+          Number of cache misses for this category
+        </ResponseField>
+        
+        <ResponseField name="hit_rate" type="number" required>
+          Cache hit rate as a decimal (0.0 to 1.0)
+        </ResponseField>
+        
+        <ResponseField name="total_ops" type="integer" required>
+          Total cache operations (hits + misses)
+        </ResponseField>
+        
+        <ResponseField name="last_updated" type="string" required>
+          ISO 8601 timestamp of last statistic update
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Cache Categories
+
+Common cache categories tracked by NeuraTrade:
+
+- **market_data** - Ticker prices, trading pairs, market summaries
+- **funding_rates** - Futures funding rate data
+- **exchanges** - Exchange configuration and capabilities
+- **orderbook** - Order book snapshots
+- **technical_analysis** - Indicator calculations (RSI, MACD, etc.)
+- **overall** - Aggregated stats across all categories
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "overall": {
+      "hits": 15420,
+      "misses": 1230,
+      "hit_rate": 0.926,
+      "total_ops": 16650,
+      "last_updated": "2026-03-03T14:32:10Z"
+    },
+    "market_data": {
+      "hits": 8920,
+      "misses": 580,
+      "hit_rate": 0.939,
+      "total_ops": 9500,
+      "last_updated": "2026-03-03T14:32:08Z"
+    },
+    "funding_rates": {
+      "hits": 3200,
+      "misses": 320,
+      "hit_rate": 0.909,
+      "total_ops": 3520,
+      "last_updated": "2026-03-03T14:31:45Z"
+    },
+    "exchanges": {
+      "hits": 2150,
+      "misses": 50,
+      "hit_rate": 0.977,
+      "total_ops": 2200,
+      "last_updated": "2026-03-03T14:30:12Z"
+    }
+  }
+}
+```
+
+---
+
+## GET /api/v1/cache/stats/:category
+
+Get cache statistics for a specific category.
+
+### Request
+
+```bash
+curl http://localhost:3000/api/v1/cache/stats/market_data
+```
+
+### Path Parameters
+
+<ParamField path="category" type="string" required>
+  Cache category name (e.g., `market_data`, `funding_rates`, `exchanges`)
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Operation success indicator
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Cache statistics for the requested category
+  
+  <Expandable title="data">
+    <ResponseField name="hits" type="integer" required>
+      Number of cache hits
+    </ResponseField>
+    
+    <ResponseField name="misses" type="integer" required>
+      Number of cache misses
+    </ResponseField>
+    
+    <ResponseField name="hit_rate" type="number" required>
+      Cache hit rate (0.0 to 1.0)
+    </ResponseField>
+    
+    <ResponseField name="total_ops" type="integer" required>
+      Total cache operations
+    </ResponseField>
+    
+    <ResponseField name="last_updated" type="string" required>
+      ISO 8601 timestamp of last update
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error Responses
+
+- **400 Bad Request**: Category parameter is missing
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "hits": 8920,
+    "misses": 580,
+    "hit_rate": 0.939,
+    "total_ops": 9500,
+    "last_updated": "2026-03-03T14:32:08Z"
+  }
+}
+```
+
+---
+
+## GET /api/v1/cache/metrics
+
+Get comprehensive cache metrics including Redis server information.
+
+### Request
+
+```bash
+curl http://localhost:3000/api/v1/cache/metrics
+```
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Operation success indicator
+</ResponseField>
+
+<ResponseField name="data" type="object" required>
+  Comprehensive cache metrics
+  
+  <Expandable title="data">
+    <ResponseField name="overall" type="object" required>
+      Aggregated statistics across all categories
+    </ResponseField>
+    
+    <ResponseField name="by_category" type="object" required>
+      Statistics grouped by cache category
+    </ResponseField>
+    
+    <ResponseField name="redis_info" type="object">
+      Raw Redis INFO output with memory, clients, and keyspace data
+      
+      <Expandable title="redis_info">
+        <ResponseField name="used_memory" type="string">
+          Memory used by Redis (human-readable format)
+        </ResponseField>
+        
+        <ResponseField name="used_memory_peak" type="string">
+          Peak memory usage
+        </ResponseField>
+        
+        <ResponseField name="connected_clients" type="string">
+          Number of connected clients
+        </ResponseField>
+        
+        <ResponseField name="total_commands_processed" type="string">
+          Total commands processed since server start
+        </ResponseField>
+        
+        <ResponseField name="instantaneous_ops_per_sec" type="string">
+          Current operations per second
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    
+    <ResponseField name="memory_usage_bytes" type="integer">
+      Redis memory usage in bytes
+    </ResponseField>
+    
+    <ResponseField name="connected_clients" type="integer">
+      Number of connected Redis clients
+    </ResponseField>
+    
+    <ResponseField name="key_count" type="integer">
+      Total number of keys in Redis database
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Error Responses
+
+- **500 Internal Server Error**: Failed to retrieve cache metrics from Redis
+
+<Note>
+This endpoint performs multiple Redis operations (INFO, MEMORY USAGE, CLIENT LIST, DBSIZE) and may take longer to respond than simple stats endpoints.
+</Note>
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "data": {
+    "overall": {
+      "hits": 15420,
+      "misses": 1230,
+      "hit_rate": 0.926,
+      "total_ops": 16650,
+      "last_updated": "2026-03-03T14:32:10Z"
+    },
+    "by_category": {
+      "market_data": {
+        "hits": 8920,
+        "misses": 580,
+        "hit_rate": 0.939,
+        "total_ops": 9500,
+        "last_updated": "2026-03-03T14:32:08Z"
+      },
+      "funding_rates": {
+        "hits": 3200,
+        "misses": 320,
+        "hit_rate": 0.909,
+        "total_ops": 3520,
+        "last_updated": "2026-03-03T14:31:45Z"
+      }
+    },
+    "redis_info": {
+      "used_memory": "45678912",
+      "used_memory_human": "43.56M",
+      "used_memory_peak": "52428800",
+      "connected_clients": "12",
+      "total_commands_processed": "892456",
+      "instantaneous_ops_per_sec": "342"
+    },
+    "memory_usage_bytes": 45678912,
+    "connected_clients": 12,
+    "key_count": 3456
+  }
+}
+```
+
+---
+
+## POST /api/v1/cache/stats/reset
+
+**Admin Only** - Reset all cache statistics to zero.
+
+### Request
+
+```bash
+curl -X POST http://localhost:3000/api/v1/cache/stats/reset
+```
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Operation success indicator
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Success message
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Cache statistics reset successfully"
+}
+```
+
+<Warning>
+Resetting cache statistics does NOT clear the actual cache data in Redis. It only resets the hit/miss counters. To clear cache data, use Redis FLUSHDB or delete specific keys.
+</Warning>
+
+---
+
+## POST /api/v1/cache/hit
+
+**Testing Only** - Manually record cache hits for testing purposes.
+
+### Request
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/cache/hit?category=market_data&count=10"
+```
+
+### Query Parameters
+
+<ParamField query="category" type="string" required>
+  Cache category name
+</ParamField>
+
+<ParamField query="count" type="integer" default="1">
+  Number of hits to record (default: 1)
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Operation success indicator
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Success message
+</ResponseField>
+
+<ResponseField name="count" type="integer" required>
+  Number of hits recorded
+</ResponseField>
+
+### Error Responses
+
+- **400 Bad Request**: Category parameter is missing
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Cache hits recorded successfully",
+  "count": 10
+}
+```
+
+---
+
+## POST /api/v1/cache/miss
+
+**Testing Only** - Manually record cache misses for testing purposes.
+
+### Request
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/cache/miss?category=market_data&count=5"
+```
+
+### Query Parameters
+
+<ParamField query="category" type="string" required>
+  Cache category name
+</ParamField>
+
+<ParamField query="count" type="integer" default="1">
+  Number of misses to record (default: 1)
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean" required>
+  Operation success indicator
+</ResponseField>
+
+<ResponseField name="message" type="string" required>
+  Success message
+</ResponseField>
+
+<ResponseField name="count" type="integer" required>
+  Number of misses recorded
+</ResponseField>
+
+### Error Responses
+
+- **400 Bad Request**: Category parameter is missing
+
+### Example Response
+
+```json
+{
+  "success": true,
+  "message": "Cache misses recorded successfully",
+  "count": 5
+}
+```
+
+<Note>
+The `/cache/hit` and `/cache/miss` endpoints are intended for testing and development. They allow simulation of cache behavior without triggering actual cache operations.
+</Note>
+
+---
+
+## Cache Analytics Strategy
+
+### Automatic Tracking
+
+The cache analytics service automatically tracks hit/miss rates when:
+
+- Market data is fetched from Redis cache
+- Funding rate queries check the cache
+- Exchange configuration is retrieved
+- Technical indicator results are cached
+
+### Performance Optimization
+
+Recommended cache hit rate targets:
+
+- **Market Data**: > 90% (data changes frequently but is queried more often)
+- **Funding Rates**: > 85% (updates every 8 hours for most exchanges)
+- **Exchange Config**: > 95% (rarely changes, heavily cached)
+- **Order Books**: > 70% (high volatility, shorter TTL)
+
+### TTL Configuration
+
+Default cache TTL by category:
+
+- **exchange:config**: 1 hour
+- **exchange:supported**: 30 minutes
+- **market:ticker**: 5 seconds
+- **market:funding**: 5 minutes
+- **cache:analytics:stats**: 24 hours (self-reporting)
+
+### Monitoring Best Practices
+
+1. **Track Hit Rates**: Monitor `/api/v1/cache/stats` to identify categories with low hit rates
+2. **Memory Usage**: Use `/api/v1/cache/metrics` to watch Redis memory consumption
+3. **Key Count Growth**: Alert on unexpected key count increases (potential memory leak)
+4. **Client Connections**: Monitor `connected_clients` to detect connection leaks
+
+---
+
+## Source Reference
+
+Cache endpoints are implemented in:
+- Handler: `services/backend-api/internal/api/handlers/cache.go:48-231`
+- Service: `services/backend-api/internal/services/cache_analytics.go:15-343`
+- Route Registration: `services/backend-api/internal/api/routes.go:1163-1171`

@@ -1,0 +1,456 @@
+---
+title: 'Autonomous Trading'
+description: 'Quest-based autonomous execution engine with scalping, arbitrage, and scheduled strategies'
+icon: 'robot'
+---
+
+## Overview
+
+NeuraTrade's autonomous trading system uses a **quest engine** to schedule and execute trading strategies without human intervention. The system supports routine quests (scheduled), triggered quests (event-driven), and goal-based quests (milestone-driven).
+
+## Quest Types
+
+<Tabs>
+  <Tab title="Routine">
+    **Time-triggered quests** that run on a fixed schedule (micro/hourly/daily/weekly).
+    
+    ```go services/backend-api/internal/services/quest_engine.go:22-27
+    const (
+        QuestTypeRoutine   QuestType = "routine"   // Time-triggered
+        QuestTypeTriggered QuestType = "triggered" // Event-driven
+        QuestTypeGoal      QuestType = "goal"      // Milestone-driven
+        QuestTypeArbitrage QuestType = "arbitrage" // Arbitrage execution
+    )
+    ```
+  </Tab>
+  <Tab title="Triggered">
+    **Event-driven quests** activated by market conditions (volatility spikes, arbitrage opportunities, risk events).
+    
+    <Info>
+    Triggered quests are created dynamically when specific market conditions are detected.
+    </Info>
+  </Tab>
+  <Tab title="Goal">
+    **Milestone-driven quests** that track progress toward a financial target (fund growth, win rate, PnL targets).
+  </Tab>
+</Tabs>
+
+## Quest Engine Architecture
+
+### Core Components
+
+```go services/backend-api/internal/services/quest_engine.go:141-168
+type QuestEngine struct {
+    mu                  sync.RWMutex
+    quests              map[string]*Quest
+    executing           map[string]bool
+    executionStarts     map[string]time.Time
+    executionStage      map[string]string
+    autonomousState     map[string]*AutonomousState
+    definitions         map[string]*QuestDefinition
+    handlers            map[QuestType]QuestHandler
+    store               QuestStore
+    redis               *redis.Client  // Distributed locks
+    runtimeBudget       questRuntimeBudget
+    riskLockActive      bool
+    notificationService *NotificationService
+}
+```
+
+### Quest Lifecycle
+
+<Steps>
+  <Step title="Creation">
+    Quest created from a definition with a unique ID, target count, and metadata.
+  </Step>
+  <Step title="Scheduling">
+    Quest enters the scheduler queue based on its cadence (micro/hourly/daily/weekly).
+  </Step>
+  <Step title="Lock Acquisition">
+    Before execution, a distributed Redis lock is acquired to prevent duplicate runs across instances.
+  </Step>
+  <Step title="Handler Execution">
+    The quest handler executes the trading logic (market scan, signal generation, order placement).
+  </Step>
+  <Step title="Persistence">
+    Quest progress, checkpoints, and status are persisted to the database.
+  </Step>
+  <Step title="Completion">
+    Quest marked as completed (one-time) or re-scheduled (routine).
+  </Step>
+</Steps>
+
+## Default Quest Definitions
+
+The quest engine registers several built-in quests on startup:
+
+<AccordionGroup>
+  <Accordion title="Market Scanner" icon="magnifying-glass">
+    **ID**: `market_scan`  
+    **Cadence**: Micro (every 1-5 minutes)  
+    **Purpose**: Scan all exchanges for price discrepancies and arbitrage opportunities
+    
+    ```go services/backend-api/internal/services/quest_engine.go:321-328
+    e.RegisterDefinition(&QuestDefinition{
+        ID:          "market_scan",
+        Name:        "Market Scanner",
+        Description: "Scan markets for arbitrage opportunities",
+        Type:        QuestTypeRoutine,
+        Cadence:     CadenceMicro,
+        Prompt:      "Scan all configured exchanges for price discrepancies",
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Scalping Executor" icon="bolt">
+    **ID**: `scalping_execution`  
+    **Cadence**: Micro (every 1-5 minutes)  
+    **Purpose**: Execute scalping trades based on skill parameters and market conditions
+    
+    ```go services/backend-api/internal/services/quest_engine.go:371-378
+    e.RegisterDefinition(&QuestDefinition{
+        ID:          "scalping_execution",
+        Name:        "Scalping Executor",
+        Description: "Execute scalping trades based on skill parameters",
+        Type:        QuestTypeRoutine,
+        Cadence:     CadenceMicro,
+        Prompt:      "Scan for scalping opportunities and execute trades",
+    })
+    ```
+    
+    <Warning>
+    Scalping quests operate in **live trading mode** by default (`dry_run=false`). Ensure risk limits are configured.
+    </Warning>
+  </Accordion>
+  
+  <Accordion title="Funding Rate Scanner" icon="chart-mixed">
+    **ID**: `funding_rate_scan`  
+    **Cadence**: Micro  
+    **Purpose**: Check funding rates across futures exchanges for arbitrage opportunities
+  </Accordion>
+  
+  <Accordion title="Portfolio Health Check" icon="heartbeat">
+    **ID**: `portfolio_health`  
+    **Cadence**: Hourly  
+    **Purpose**: Verify portfolio balances, exposure limits, and position health
+  </Accordion>
+  
+  <Accordion title="Daily Performance Report" icon="chart-line">
+    **ID**: `daily_report`  
+    **Cadence**: Daily  
+    **Purpose**: Generate comprehensive daily report including PnL, win rate, and strategy performance
+  </Accordion>
+</AccordionGroup>
+
+## Agent Execution Loop
+
+When a quest runs, it triggers the **multi-agent execution loop** that coordinates Analyst, Trader, and Risk Manager agents.
+
+### Execution Pipeline
+
+```go services/backend-api/internal/services/agent_execution_loop.go:254-382
+func (l *AgentExecutionLoop) Execute(
+    ctx context.Context,
+    symbol string,
+    marketContext MarketContext,
+    portfolio PortfolioState,
+) (*ExecutionLoopResult, error) {
+    // Step 1: Run AnalystAgent analysis
+    analysis, err := l.runAnalysis(ctx, symbol, marketContext)
+    
+    // Step 2: Run LLM with tool calling (optional)
+    if l.llmClient != nil && l.config.EnableToolCalls {
+        toolCalls, toolResults, _ := l.runLLMWithTools(ctx, symbol, analysis, marketContext)
+    }
+    
+    // Step 3: Generate trading decision using TraderAgent
+    tradingDecision, err := l.traderAgent.MakeDecision(ctx, marketContext, portfolio)
+    
+    // Step 4: Run risk assessment
+    if l.config.RequireRiskApproval {
+        riskAssessment, err := l.riskManager.AssessTradingRisk(ctx, symbol, side, riskSignals)
+        
+        // Block or reduce position based on risk level
+        switch riskAssessment.Action {
+        case risk.RiskActionBlock, risk.RiskActionEmergency:
+            result.Decision = ExecutionDecisionReject
+            return result, nil
+        case risk.RiskActionReduce:
+            tradingDecision.SizePercent = adjustedSize
+        }
+    }
+    
+    // Step 5: Approve execution if confidence threshold met
+    if result.Confidence >= l.config.MinConfidence {
+        result.Decision = ExecutionDecisionApprove
+    }
+    
+    // Step 6: Execute order if auto-execute enabled
+    if l.config.AutoExecute && l.orderExecutor != nil {
+        l.orderExecutor.ExecuteOrder(ctx, tradingDecision)
+    }
+    
+    return result, nil
+}
+```
+
+### Configuration
+
+```go services/backend-api/internal/services/agent_execution_loop.go:38-52
+type AgentExecutionLoopConfig struct {
+    MaxIterations       int           // Max LLM iterations per cycle
+    Timeout             time.Duration // Max time for execution cycle
+    RequireRiskApproval bool          // Require risk manager approval
+    MinConfidence       float64       // Min confidence threshold (0.0-1.0)
+    EnableToolCalls     bool          // Enable LLM tool calling
+    AutoExecute         bool          // Auto-execute approved orders
+}
+
+// Default configuration
+func DefaultAgentExecutionLoopConfig() AgentExecutionLoopConfig {
+    return AgentExecutionLoopConfig{
+        MaxIterations:       5,
+        Timeout:             60 * time.Second,
+        RequireRiskApproval: true,
+        MinConfidence:       0.7,
+        EnableToolCalls:     true,
+        AutoExecute:         false,  // Manual approval by default
+    }
+}
+```
+
+## Autonomous Mode Lifecycle
+
+### Starting Autonomous Mode
+
+```go services/backend-api/internal/services/quest_engine.go:1156-1210
+func (e *QuestEngine) BeginAutonomous(chatID string) (*AutonomousState, error) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+    
+    // Pause existing active quests for this chat
+    for _, q := range e.quests {
+        if q.Status == QuestStatusActive && q.Metadata["chat_id"] == chatID {
+            q.Status = QuestStatusPaused
+        }
+    }
+    
+    state := &AutonomousState{
+        ChatID:    chatID,
+        IsActive:  true,
+        StartedAt: time.Now(),
+    }
+    
+    // Create default quests (scalping-first mode)
+    defaultQuests := []string{"scalping_execution"}
+    for _, defID := range defaultQuests {
+        quest, _ := e.createQuestInternal(defID, chatID)
+        quest.Status = QuestStatusActive
+        quest.Metadata["dry_run"] = "false"  // LIVE TRADING
+        state.ActiveQuests = append(state.ActiveQuests, quest.ID)
+    }
+    
+    return state, nil
+}
+```
+
+<Warning>
+**Live Trading Warning**: Autonomous mode defaults to `dry_run=false` for live trading. Always verify risk limits before activation.
+</Warning>
+
+## Cadence Modes
+
+The quest scheduler adapts its polling frequency based on system state:
+
+<Tabs>
+  <Tab title="Normal">
+    **60 seconds** - Standard polling interval when no quests are executing
+  </Tab>
+  <Tab title="Active Risk">
+    **25 seconds** - Faster polling when quests are currently executing
+  </Tab>
+  <Tab title="Degraded">
+    **90 seconds** - Slower polling when runtime failures are detected
+  </Tab>
+  <Tab title="Idle">
+    **120 seconds** - Slowest polling when no active quests exist
+  </Tab>
+  <Tab title="Risk Lock">
+    **25 seconds** - Monitoring mode when risk lock is active (no new entries allowed)
+  </Tab>
+</Tabs>
+
+```go services/backend-api/internal/services/quest_engine.go:596-631
+func (e *QuestEngine) determineCadenceModeLocked() string {
+    if e.isRiskLockEnabledLocked() {
+        return "risk_lock"
+    }
+    
+    activeQuests := 0
+    for _, quest := range e.quests {
+        if quest.Status == QuestStatusActive {
+            activeQuests++
+        }
+    }
+    
+    if activeQuests == 0 {
+        return "idle"
+    }
+    if len(e.executing) > 0 {
+        return "active_risk"
+    }
+    return "normal"
+}
+```
+
+## Distributed Coordination
+
+Quests use **Redis distributed locks** to ensure only one instance executes a quest at a time:
+
+```go services/backend-api/internal/services/quest_engine.go:1099-1109
+func (e *QuestEngine) acquireLock(ctx context.Context, key string, ttl time.Duration) bool {
+    if e.redis == nil {
+        return true  // No Redis, allow execution
+    }
+    
+    ok, err := e.redis.SetNX(ctx, key, "locked", ttl).Result()
+    if err != nil {
+        log.Printf("Failed to acquire lock %s: %v", key, err)
+        return false
+    }
+    return ok
+}
+```
+
+### Lock TTL Calculation
+
+Lock TTL is dynamically calculated based on execution budget:
+
+```
+Lock TTL = Execution Timeout + Lock Tail Buffer
+         = (Stale Timeout + 20s) + 35s
+         = (3min + 20s) + 35s
+         = 4min 55s
+```
+
+## Paper vs Live Execution
+
+### Paper Trading Mode
+
+<Info>
+Paper trading simulates order execution without placing real orders. Useful for testing strategies and validating risk limits.
+</Info>
+
+```typescript
+// Quest metadata controls execution mode
+quest.Metadata["dry_run"] = "true"   // Paper trading
+quest.Metadata["paper_trading"] = "true"
+```
+
+### Live Trading Mode
+
+<Warning>
+**Risk Warning**: Live mode executes real orders on exchanges. Ensure:
+- API keys have correct permissions
+- Risk limits are configured
+- Sufficient balance exists
+- Circuit breakers are active
+</Warning>
+
+```typescript
+// Live trading configuration
+quest.Metadata["dry_run"] = "false"  // LIVE TRADING
+quest.Metadata["paper_trading"] = "false"
+```
+
+## Telegram Bot Control
+
+Control autonomous mode via Telegram commands:
+
+<CardGroup cols={2}>
+  <Card title="/begin" icon="play">
+    Start autonomous trading mode. Creates scalping quest and begins execution.
+  </Card>
+  <Card title="/pause" icon="pause">
+    Pause all active quests. Existing positions remain open.
+  </Card>
+  <Card title="/status" icon="info">
+    View current autonomous state, active quests, and runtime diagnostics.
+  </Card>
+  <Card title="/doctor" icon="stethoscope">
+    Run diagnostics on quest scheduler, risk gates, and AI provider chain.
+  </Card>
+</CardGroup>
+
+## Monitoring & Diagnostics
+
+### Runtime Diagnostics
+
+```go services/backend-api/internal/services/quest_engine.go:1346-1389
+func (e *QuestEngine) GetRuntimeDiagnostics() map[string]interface{} {
+    return map[string]interface{}{
+        "cadence_mode":               e.cadenceMode,
+        "active_quests":              len(e.quests),
+        "executing_quests":           len(e.executing),
+        "risk_lock_active":           e.isRiskLockEnabledLocked(),
+        "risk_lock_source":           e.currentRiskLockSourceLocked(),
+        "execution_stage":            executionStage,
+        "execution_last_progress_at": executionLastProgress,
+        "provider_chain_configured":  e.aiProviderChainConfigured,
+        "provider_chain_usable":      e.aiProviderChainUsable,
+        "watchdog_stale":             e.runtimeBudget.StaleTimeout,
+        "execution_timeout":          e.runtimeBudget.ExecutionTimeout,
+        "lock_ttl":                   e.runtimeBudget.LockTTL,
+    }
+}
+```
+
+### Execution Metrics
+
+```go services/backend-api/internal/services/agent_execution_loop.go:95-109
+type ExecutionLoopMetrics struct {
+    TotalCycles          int64
+    ApprovedExecutions   int64
+    RejectedExecutions   int64
+    DeferredExecutions   int64
+    EmergencyTriggers    int64
+    TotalToolCalls       int64
+    FailedToolCalls      int64
+    AverageIterations    float64
+    AverageExecutionTime float64  // milliseconds
+    AverageConfidence    float64
+    DecisionsBySymbol    map[string]int64
+    DecisionsByAction    map[string]int64
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Start with Paper Trading" icon="flask">
+    Always test new strategies in paper trading mode before going live.
+  </Card>
+  <Card title="Monitor Execution Stages" icon="gauge">
+    Track execution stage progression. Stuck stages indicate network or lock issues.
+  </Card>
+  <Card title="Configure Risk Locks" icon="lock">
+    Set daily loss caps, consecutive loss limits, and max drawdown thresholds.
+  </Card>
+  <Card title="Review Quest Checkpoints" icon="bookmark">
+    Quest checkpoints store state between executions. Review for debugging.
+  </Card>
+</CardGroup>
+
+## Related Resources
+
+<CardGroup cols={3}>
+  <Card title="AI Agents" href="/features/ai-agents" icon="brain">
+    Learn about the multi-agent system powering quest execution
+  </Card>
+  <Card title="Risk Management" href="/features/risk-management" icon="shield">
+    Understand risk primitives that gate quest execution
+  </Card>
+  <Card title="Telegram Bot" href="/features/telegram-bot" icon="paper-plane">
+    Control autonomous mode via Telegram commands
+  </Card>
+</CardGroup>

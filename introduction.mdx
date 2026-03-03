@@ -1,0 +1,191 @@
+---
+title: "Introduction to NeuraTrade"
+description: "High-performance cryptocurrency arbitrage and autonomous trading platform powered by AI agents"
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="NeuraTrade Hero Light"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="NeuraTrade Hero Dark"
+/>
+
+## Welcome to NeuraTrade
+
+NeuraTrade is a multi-service cryptocurrency trading platform that combines high-performance Go backend services with intelligent TypeScript sidecar services for exchange integration and Telegram delivery. Built for serious traders who demand speed, reliability, and autonomous execution.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get NeuraTrade running locally in under 5 minutes
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Detailed installation guide with prerequisites and configuration
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference"
+  >
+    Complete API documentation for market data, arbitrage, and trading
+  </Card>
+  <Card
+    title="Architecture"
+    icon="diagram-project"
+    href="/architecture"
+  >
+    Learn about NeuraTrade's multi-service architecture
+  </Card>
+</CardGroup>
+
+## Core Capabilities
+
+### Arbitrage Detection
+Real-time detection of arbitrage opportunities across multiple exchanges:
+- **Spot Arbitrage**: Cross-exchange price differentials
+- **Futures Arbitrage**: Funding rate arbitrage between spot and perpetual futures
+- **Triangular Arbitrage**: Multi-asset arbitrage paths
+
+### Autonomous Trading
+AI-powered agents that execute trading strategies autonomously:
+- **Analyst Agent**: Market analysis and signal generation
+- **Trader Agent**: Order execution and position management  
+- **Risk Manager**: Portfolio safety and risk controls
+
+### Market Intelligence
+- WebSocket market data streaming
+- Technical indicators (RSI, MACD, Bollinger Bands)
+- Order book depth analysis
+- Sentiment analysis from news and social media
+
+### Production-Ready
+- Redis caching for sub-millisecond response times
+- SQLite for development, PostgreSQL for production
+- Circuit breakers and rate limiting
+- Telegram notifications and bot interface
+
+## Platform Architecture
+
+NeuraTrade consists of three core services:
+
+<CodeGroup>
+
+```text Services Overview
+NeuraTrade/
+├── services/backend-api/      # Go API, strategy engine, persistence
+├── services/ccxt-service/     # Bun + CCXT exchange bridge
+└── services/telegram-service/ # Bun + grammY bot delivery
+```
+
+</CodeGroup>
+
+### Backend API (Go)
+High-performance core engine handling:
+- Market data collection and caching
+- Arbitrage opportunity detection
+- Risk management and position tracking
+- Technical analysis and signal generation
+- Database persistence and migrations
+
+### CCXT Service (Bun + TypeScript)
+Exchange integration layer providing:
+- Unified API across 100+ exchanges
+- Real-time ticker and orderbook data
+- Order execution and position management
+- WebSocket streaming support
+
+### Telegram Service (Bun + TypeScript)
+User interface and notification delivery:
+- Interactive Telegram bot commands
+- Real-time trade notifications
+- Portfolio monitoring and alerts
+- Admin controls via chat
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Multi-Exchange Support" icon="building-columns">
+    Connect to 100+ cryptocurrency exchanges through unified CCXT interface
+  </Card>
+  <Card title="Real-Time Data" icon="bolt">
+    WebSocket streaming for sub-second market data updates and execution
+  </Card>
+  <Card title="AI Agents" icon="brain">
+    Autonomous trading agents with customizable strategies and risk controls
+  </Card>
+  <Card title="Risk Management" icon="shield">
+    Portfolio safety gates, drawdown limits, daily loss caps, position throttling
+  </Card>
+  <Card title="Paper Trading" icon="flask">
+    Test strategies risk-free with realistic simulation mode
+  </Card>
+  <Card title="Telegram Integration" icon="paper-plane">
+    Control your trading platform and receive notifications via Telegram
+  </Card>
+</CardGroup>
+
+## API Endpoints
+
+NeuraTrade exposes a RESTful API at `http://localhost:8080`:
+
+| Endpoint | Purpose |
+|----------|----------|
+| `/health` | Health check and service status |
+| `/api/v1/market/prices` | Real-time market prices |
+| `/api/v1/arbitrage/opportunities` | Current arbitrage opportunities |
+| `/api/v1/futures-arbitrage/opportunities` | Funding rate arbitrage |
+| `/api/v1/analysis/signals` | Trading signals and indicators |
+| `/api/v1/trading/positions` | Active positions and orders |
+
+<Note>
+  The default API listens on port `8080`. You can configure this via the `SERVER_PORT` environment variable.
+</Note>
+
+## Runtime State
+
+All runtime data, logs, and configuration are stored in:
+
+```bash
+~/.neuratrade/
+├── config.json          # Runtime configuration (API keys, chat IDs)
+├── neuratrade.db       # SQLite database (development)
+├── logs/
+│   ├── backend.log     # Backend service logs
+│   ├── gateway.log     # Gateway orchestration logs
+│   └── telegram.log    # Telegram service logs
+└── pids/               # Process ID files for gateway
+```
+
+<Warning>
+  Never commit the `~/.neuratrade/` directory or its contents. It contains sensitive API keys and credentials.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart Guide"
+    icon="play"
+    href="/quickstart"
+  >
+    Get your first arbitrage opportunity in 5 minutes
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration"
+  >
+    Configure exchanges, API keys, and trading parameters
+  </Card>
+</CardGroup>

@@ -1,0 +1,332 @@
+---
+title: 'Arbitrage Detection'
+description: 'Real-time arbitrage opportunity detection across spot, futures, and multi-leg markets'
+icon: 'chart-line'
+---
+
+## Overview
+
+NeuraTrade's arbitrage detection engine continuously scans markets for price discrepancies and funding rate differentials across exchanges. The system supports spot arbitrage, futures funding rate arbitrage, and multi-leg (triangular) arbitrage strategies.
+
+## Spot Arbitrage Detection
+
+The spot arbitrage calculator identifies price differences for the same trading pair across multiple exchanges.
+
+### How It Works
+
+<Steps>
+  <Step title="Market Data Collection">
+    The system queries the latest market data for all active trading pairs across configured exchanges, filtering data within a 10-minute window.
+  </Step>
+  <Step title="Price Comparison">
+    For each symbol, the engine compares prices across exchanges to find the lowest buy price and highest sell price.
+  </Step>
+  <Step title="Profit Calculation">
+    Calculate profit percentage: `(sell_price - buy_price) / buy_price * 100`
+  </Step>
+  <Step title="Opportunity Filtering">
+    Filter opportunities above the minimum profit threshold (default: 0.1%)
+  </Step>
+</Steps>
+
+### Code Reference
+
+```go services/backend-api/internal/services/arbitrage_service.go
+// SpotArbitrageCalculator compares prices across exchanges
+type SpotArbitrageCalculator struct{}
+
+func (calc *SpotArbitrageCalculator) CalculateArbitrageOpportunities(
+    ctx context.Context,
+    marketData map[string][]models.MarketData,
+) ([]models.ArbitrageOpportunity, error) {
+    var opportunities []models.ArbitrageOpportunity
+    
+    for _, exchangeData := range marketData {
+        if len(exchangeData) < 2 {
+            continue // Need at least 2 exchanges
+        }
+        
+        // Find lowest and highest prices
+        var lowestPrice, highestPrice decimal.Decimal
+        var lowestExchange, highestExchange *models.Exchange
+        
+        // Calculate profit percentage
+        profitPercentage := highestPrice.Sub(lowestPrice)
+            .Div(lowestPrice)
+            .Mul(decimal.NewFromInt(100))
+        
+        if profitPercentage.GreaterThan(decimal.NewFromFloat(0.1)) {
+            opportunities = append(opportunities, opportunity)
+        }
+    }
+    return opportunities, nil
+}
+```
+
+<Info>
+**Data Freshness**: Only market data from the last 10 minutes is considered to ensure opportunities are still valid.
+</Info>
+
+## Futures Arbitrage Detection
+
+Funding rate arbitrage exploits differences in perpetual futures funding rates across exchanges. When one exchange pays significantly more to longs (or shorts) than another, a market-neutral arbitrage position can be opened.
+
+### Funding Rate Mechanism
+
+<CardGroup cols={2}>
+  <Card title="Long Position" icon="arrow-trend-up">
+    Open long on exchange with **lower** funding rate (receive payments or pay less)
+  </Card>
+  <Card title="Short Position" icon="arrow-trend-down">
+    Open short on exchange with **higher** funding rate (receive more payments)
+  </Card>
+</CardGroup>
+
+### Calculation
+
+```go services/backend-api/internal/services/futures_arbitrage_calculator.go
+type FuturesArbitrageCalculationInput struct {
+    Symbol           string
+    LongExchange     string
+    ShortExchange    string
+    LongFundingRate  decimal.Decimal
+    ShortFundingRate decimal.Decimal
+    LongMarkPrice    decimal.Decimal
+    ShortMarkPrice   decimal.Decimal
+    FundingInterval  int // Hours (typically 8)
+}
+
+// Net funding rate is the profit from the spread
+netFundingRate := shortRate.Sub(longRate)
+
+// APY calculation
+hourlyRate := netFundingRate.Div(decimal.NewFromInt(fundingInterval))
+dailyRate := hourlyRate.Mul(decimal.NewFromInt(24))
+apy := dailyRate.Mul(decimal.NewFromInt(365))
+```
+
+### Service Implementation
+
+The `FuturesArbitrageService` runs every 30 seconds to detect funding rate opportunities:
+
+```go services/backend-api/internal/services/futures_arbitrage_service.go:128-177
+func (s *FuturesArbitrageService) runOpportunityCalculator() {
+    ticker := time.NewTicker(30 * time.Second)
+    defer ticker.Stop()
+    
+    for {
+        select {
+        case <-s.ctx.Done():
+            return
+        case <-ticker.C:
+            calcCtx, cancel := context.WithTimeout(s.ctx, 25*time.Second)
+            
+            err := s.errorRecoveryManager.ExecuteWithRetry(
+                calcCtx,
+                "calculate_opportunities",
+                func() error {
+                    return s.calculateAndStoreOpportunities(calcCtx)
+                },
+            )
+            cancel()
+        }
+    }
+}
+```
+
+<Warning>
+**Price Difference Risk**: Large price differences between exchanges may indicate liquidity issues or oracle problems, not true arbitrage.
+</Warning>
+
+## Multi-Leg Arbitrage (Triangular)
+
+Triangular arbitrage exploits price inefficiencies across three trading pairs on the same exchange.
+
+### Example: USDT → BTC → ETH → USDT
+
+<Tabs>
+  <Tab title="Opportunity">
+    ```
+    1. Start with 1000 USDT
+    2. Buy BTC with USDT  → 0.025 BTC  (BTC/USDT = 40000)
+    3. Buy ETH with BTC   → 0.625 ETH  (ETH/BTC = 0.025)
+    4. Sell ETH for USDT  → 1005 USDT  (ETH/USDT = 1608)
+    
+    Net Profit: 5 USDT (0.5%)
+    ```
+  </Tab>
+  <Tab title="Code">
+    ```go services/backend-api/internal/services/multi_leg_arbitrage_calculator.go:87-131
+    func (c *MultiLegArbitrageCalculator) calculateTriangularOpp(
+        ctx context.Context,
+        exchange, start, mid1, mid2 string,
+        tickerMap map[string]TickerData,
+    ) (models.MultiLegOpportunity, error) {
+        // Leg 1: start -> mid1
+        leg1, rate1, _ := c.getLegInfo(ctx, exchange, start, mid1, tickerMap)
+        
+        // Leg 2: mid1 -> mid2
+        leg2, rate2, _ := c.getLegInfo(ctx, exchange, mid1, mid2, tickerMap)
+        
+        // Leg 3: mid2 -> start (back to original)
+        leg3, rate3, _ := c.getLegInfo(ctx, exchange, mid2, start, tickerMap)
+        
+        // Calculate total return after fees
+        takerFee := c.defaultTakerFee
+        totalReturn := decimal.NewFromInt(1).
+            Mul(rate1).Mul(decimal.NewFromInt(1).Sub(takerFee)).
+            Mul(rate2).Mul(decimal.NewFromInt(1).Sub(takerFee)).
+            Mul(rate3).Mul(decimal.NewFromInt(1).Sub(takerFee))
+        
+        profitPercentage := totalReturn.Sub(decimal.NewFromInt(1)).
+            Mul(decimal.NewFromInt(100))
+        
+        return models.MultiLegOpportunity{
+            ExchangeName:     exchange,
+            Legs:             []models.ArbitrageLeg{leg1, leg2, leg3},
+            ProfitPercentage: profitPercentage,
+            DetectedAt:       time.Now(),
+            ExpiresAt:        time.Now().Add(1 * time.Minute),
+        }, nil
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+**Fee Consideration**: All three legs incur trading fees. The calculator accounts for taker fees on each trade to compute net profitability.
+</Note>
+
+## Configuration
+
+Arbitrage detection behavior is controlled through the application configuration:
+
+```yaml
+arbitrage:
+  enabled: true
+  interval_seconds: 60          # Scan frequency
+  min_profit_threshold: 0.5     # Minimum profit % to consider
+  max_age_minutes: 30           # Discard stale opportunities
+  batch_size: 100               # Database batch size
+```
+
+### Key Configuration Parameters
+
+<AccordionGroup>
+  <Accordion title="interval_seconds" icon="clock">
+    How frequently the arbitrage service scans for opportunities. Lower values increase API load but catch fleeting opportunities.
+  </Accordion>
+  <Accordion title="min_profit_threshold" icon="percent">
+    Minimum profit percentage required to store an opportunity. Set higher to reduce noise from marginal opportunities.
+  </Accordion>
+  <Accordion title="max_age_minutes" icon="hourglass">
+    Maximum age of market data to consider. Older data may represent stale prices that no longer exist.
+  </Accordion>
+</AccordionGroup>
+
+## API Endpoints
+
+Retrieve active arbitrage opportunities via the REST API:
+
+```bash
+# Get active spot arbitrage opportunities
+GET /api/v1/arbitrage/opportunities?limit=10
+
+# Get active futures arbitrage opportunities
+GET /api/v1/arbitrage/futures?limit=10
+
+# Get multi-leg opportunities
+GET /api/v1/arbitrage/multi-leg?limit=10
+```
+
+### Response Example
+
+```json
+{
+  "opportunities": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "buy_exchange": "binance",
+      "sell_exchange": "coinbase",
+      "symbol": "BTC/USDT",
+      "buy_price": 40000.50,
+      "sell_price": 40250.00,
+      "profit_percentage": 0.62,
+      "detected_at": "2026-03-03T10:30:00Z",
+      "expires_at": "2026-03-03T10:35:00Z"
+    }
+  ]
+}
+```
+
+## Performance & Observability
+
+### Sentry Integration
+
+All arbitrage calculations are instrumented with Sentry spans for performance tracking:
+
+```go services/backend-api/internal/services/arbitrage_service.go:342-357
+ctx, span := observability.StartSpan(s.ctx, observability.SpanOpArbitrage, "arbitrage_calculation_cycle")
+defer observability.FinishSpan(span, nil)
+
+span.SetTag("service", "arbitrage")
+span.SetData("min_profit_threshold", s.arbitrageConfig.MinProfit)
+
+observability.AddBreadcrumb(ctx, "arbitrage", "Starting arbitrage calculation cycle", sentry.LevelInfo)
+```
+
+### Diagnostics
+
+When no market data is available, the service runs diagnostics to identify the root cause:
+
+```go services/backend-api/internal/services/arbitrage_service.go:569-639
+func (s *ArbitrageService) diagnoseNoMarketData() {
+    var totalRows, freshRows, activeExchanges, activePairs int
+    
+    // Count total market_data rows
+    s.db.QueryRow(s.ctx, "SELECT COUNT(*) FROM market_data").Scan(&totalRows)
+    
+    // Count fresh data (within 10 minutes)
+    s.db.QueryRow(s.ctx, freshDataQuery).Scan(&freshRows)
+    
+    // Count active exchanges and trading pairs
+    s.db.QueryRow(s.ctx, "SELECT COUNT(*) FROM exchanges WHERE status = 'active'").Scan(&activeExchanges)
+    s.db.QueryRow(s.ctx, "SELECT COUNT(*) FROM trading_pairs WHERE is_active = true").Scan(&activePairs)
+    
+    s.logger.WithFields(map[string]interface{}{
+        "total_market_data_rows": totalRows,
+        "fresh_rows_10min":       freshRows,
+        "active_exchanges":       activeExchanges,
+        "active_trading_pairs":   activePairs,
+        "recommendation":         s.getDiagnosticRecommendation(...),
+    }).Warn("Market data diagnostic")
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Monitor Latency" icon="gauge">
+    Use observability spans to track calculation time. High latency reduces profit capture.
+  </Card>
+  <Card title="Verify Liquidity" icon="droplet">
+    Check order book depth before executing. Price may move against you with large orders.
+  </Card>
+  <Card title="Account for Fees" icon="coins">
+    All calculations must include trading fees, withdrawal fees, and potential slippage.
+  </Card>
+  <Card title="Test in Paper Mode" icon="flask">
+    Always validate arbitrage strategies in paper trading mode before committing real capital.
+  </Card>
+</CardGroup>
+
+## Related Resources
+
+<CardGroup cols={2}>
+  <Card title="Autonomous Trading" href="/features/autonomous-trading" icon="robot">
+    Learn how arbitrage opportunities trigger automated quest execution
+  </Card>
+  <Card title="Risk Management" href="/features/risk-management" icon="shield">
+    Understand position limits and circuit breakers for arbitrage trades
+  </Card>
+</CardGroup>

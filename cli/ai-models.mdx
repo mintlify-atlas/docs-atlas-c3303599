@@ -1,0 +1,400 @@
+---
+title: AI Model Commands
+description: List and manage AI models and providers
+---
+
+The `ai` command manages AI provider integrations and model availability.
+
+## List AI Models
+
+List all available AI models:
+
+```bash
+./bin/neuratrade ai models
+```
+
+### Example Output
+
+```terminal
+Available AI Models
+==================
+- gpt-4-turbo (openai): tools, vision
+- gpt-4 (openai): tools
+- gpt-3.5-turbo (openai): tools
+- claude-3-opus (anthropic): tools, vision
+- claude-3-sonnet (anthropic): tools, vision
+- claude-3-haiku (anthropic): tools
+- gemini-pro (google): tools, vision
+- mistral-large (mistral): tools
+```
+
+### Example Output (Backend Unreachable)
+
+```terminal
+Available AI Models
+==================
+Error: Could not reach API: connection refused
+
+Make sure the NeuraTrade backend is running:
+  neuratrade gateway start
+
+Or check your configuration:
+  neuratrade config status
+```
+
+### Model Capabilities
+
+Each model shows its supported capabilities:
+
+- **tools** - Function calling / tool use
+- **vision** - Image understanding
+
+### How It Works
+
+1. Calls `/api/v1/ai/models` on backend API
+2. Backend queries configured AI providers
+3. Returns list of available models with capabilities
+4. CLI formats and displays results
+
+## List AI Providers
+
+List configured AI providers:
+
+```bash
+./bin/neuratrade ai providers
+```
+
+### Example Output
+
+```terminal
+Available AI Providers
+=====================
+- OpenAI (openai) [active]
+- Anthropic (anthropic) [active]
+- Google AI (google) [inactive]
+- Mistral AI (mistral) [active]
+```
+
+### Provider Status
+
+- **active** - Provider configured with valid API key
+- **inactive** - Provider not configured or API key missing
+
+### Example Output (Backend Unreachable)
+
+```terminal
+Available AI Providers
+=====================
+Error: Could not reach API: connection refused
+
+Make sure the NeuraTrade backend is running:
+  neuratrade gateway start
+```
+
+## Configuration
+
+### In `config.json`
+
+Configure AI providers in the configuration file:
+
+```json
+{
+  "ai": {
+    "provider": "openai",
+    "api_key": "sk-...",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4-turbo"
+  }
+}
+```
+
+### Environment Variables
+
+Override config with environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `AI_PROVIDER` | Default AI provider | From config |
+| `AI_API_KEY` | Provider API key | From config |
+| `AI_BASE_URL` | Provider API endpoint | Provider default |
+| `AI_MODEL` | Default model | From config |
+
+### Multiple Providers
+
+Configure multiple providers for fallback or different use cases. The backend supports:
+
+- **OpenAI** - GPT models
+- **Anthropic** - Claude models
+- **Google AI** - Gemini models
+- **Mistral AI** - Mistral models
+- **Custom Providers** - OpenAI-compatible APIs
+
+## API Response Format
+
+### Models Endpoint
+
+```json
+{
+  "models": [
+    {
+      "id": "gpt-4-turbo",
+      "display_name": "GPT-4 Turbo",
+      "provider": "openai",
+      "cost": "$0.01 / 1K tokens",
+      "supports_tools": true,
+      "supports_vision": true
+    },
+    {
+      "id": "claude-3-opus",
+      "display_name": "Claude 3 Opus",
+      "provider": "anthropic",
+      "cost": "$0.015 / 1K tokens",
+      "supports_tools": true,
+      "supports_vision": true
+    }
+  ]
+}
+```
+
+### Providers Endpoint
+
+```json
+{
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "is_active": true
+    },
+    {
+      "id": "anthropic",
+      "name": "Anthropic",
+      "is_active": true
+    },
+    {
+      "id": "google",
+      "name": "Google AI",
+      "is_active": false
+    }
+  ]
+}
+```
+
+## Model Selection
+
+NeuraTrade automatically selects models based on task requirements:
+
+- **Vision tasks** - Uses models with `supports_vision: true`
+- **Function calling** - Uses models with `supports_tools: true`
+- **Cost optimization** - Selects cheaper models for simple tasks
+- **Fallback** - Tries alternative providers if primary fails
+
+## Checking Provider Status
+
+Verify AI provider connectivity:
+
+```bash
+./bin/neuratrade health
+```
+
+Healthy output includes AI providers:
+
+```terminal
+Health Check Results
+===================
+✓ Backend API: healthy
+
+Service Health:
+  ✓ database: healthy
+  ✓ redis: healthy
+  ✓ ai_provider_openai: healthy
+  ✓ ai_provider_anthropic: healthy
+```
+
+## Supported Providers
+
+### OpenAI
+
+```json
+{
+  "ai": {
+    "provider": "openai",
+    "api_key": "sk-...",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4-turbo"
+  }
+}
+```
+
+**Models:**
+- gpt-4-turbo
+- gpt-4
+- gpt-3.5-turbo
+
+### Anthropic
+
+```json
+{
+  "ai": {
+    "provider": "anthropic",
+    "api_key": "sk-ant-...",
+    "base_url": "https://api.anthropic.com",
+    "model": "claude-3-opus-20240229"
+  }
+}
+```
+
+**Models:**
+- claude-3-opus-20240229
+- claude-3-sonnet-20240229
+- claude-3-haiku-20240307
+
+### Google AI
+
+```json
+{
+  "ai": {
+    "provider": "google",
+    "api_key": "...",
+    "model": "gemini-pro"
+  }
+}
+```
+
+**Models:**
+- gemini-pro
+- gemini-pro-vision
+
+### Mistral AI
+
+```json
+{
+  "ai": {
+    "provider": "mistral",
+    "api_key": "...",
+    "base_url": "https://api.mistral.ai/v1",
+    "model": "mistral-large-latest"
+  }
+}
+```
+
+**Models:**
+- mistral-large-latest
+- mistral-medium-latest
+- mistral-small-latest
+
+### Custom OpenAI-Compatible Providers
+
+```json
+{
+  "ai": {
+    "provider": "openai",
+    "api_key": "...",
+    "base_url": "https://your-custom-endpoint.com/v1",
+    "model": "your-model-name"
+  }
+}
+```
+
+Works with:
+- LM Studio
+- LocalAI
+- Ollama (with OpenAI compatibility)
+- Azure OpenAI
+- Any OpenAI-compatible API
+
+## Security Best Practices
+
+<Warning>
+**API Key Security:**
+
+1. Never commit API keys to version control
+2. Use environment variables in production
+3. Rotate keys regularly
+4. Monitor usage for anomalies
+5. Set spending limits in provider dashboards
+</Warning>
+
+### Key Masking
+
+The CLI and backend automatically mask API keys in logs and output:
+
+```terminal
+AI Provider: OpenAI
+API Key: sk-...***...xyz (masked)
+```
+
+### File Permissions
+
+Protect config files:
+
+```bash
+chmod 600 ~/.neuratrade/config.json
+```
+
+## Troubleshooting
+
+### "No AI models available"
+
+Ensure at least one provider is configured:
+
+```bash
+./bin/neuratrade config show
+```
+
+Add provider configuration:
+
+```bash
+./bin/neuratrade config init --ai-key YOUR_API_KEY
+```
+
+### "Could not reach API"
+
+Start the backend:
+
+```bash
+./bin/neuratrade gateway start
+```
+
+Verify backend is running:
+
+```bash
+./bin/neuratrade status
+```
+
+### "Provider inactive"
+
+Check API key configuration:
+
+```bash
+cat ~/.neuratrade/config.json | jq '.ai'
+```
+
+Verify API key is valid:
+
+1. Log in to provider dashboard
+2. Check API key status
+3. Verify key has required permissions
+4. Check spending limits and quotas
+
+### Rate Limits
+
+If you hit rate limits:
+
+1. Configure multiple providers for fallback
+2. Increase delay between requests
+3. Upgrade provider plan
+4. Use cheaper models for non-critical tasks
+
+### Cost Monitoring
+
+Monitor AI provider costs:
+
+1. Check provider dashboard
+2. Set up spending alerts
+3. Review `ai_model` fields in logs
+4. Use cheaper models for testing
+
+<Note>
+NeuraTrade automatically selects cost-effective models based on task complexity. Override with the `AI_MODEL` environment variable if needed.
+</Note>

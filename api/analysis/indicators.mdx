@@ -1,0 +1,371 @@
+---
+title: 'Get Technical Indicators'
+description: 'Calculate and retrieve technical analysis indicators for cryptocurrency trading pairs'
+api: 'GET /api/v1/analysis/indicators'
+---
+
+## Overview
+
+The technical indicators endpoint calculates a comprehensive set of technical analysis indicators including moving averages, momentum oscillators, trend indicators, and volatility measures. These indicators form the foundation of the trading signal generation system.
+
+## Query Parameters
+
+<ParamField query="symbol" type="string" required>
+  The trading pair symbol to analyze (e.g., "BTC/USDT").
+  
+  Example: `BTC/USDT`
+</ParamField>
+
+<ParamField query="exchange" type="string" required>
+  The exchange name where the symbol is traded (e.g., "binance").
+  
+  Example: `binance`
+</ParamField>
+
+<ParamField query="timeframe" type="string" default="1h">
+  The candlestick timeframe for analysis. Common values include:
+  - `1m` - 1 minute
+  - `5m` - 5 minutes
+  - `15m` - 15 minutes
+  - `1h` - 1 hour (default)
+  - `4h` - 4 hours
+  - `1d` - 1 day
+</ParamField>
+
+## Response
+
+<ResponseField name="indicators" type="TechnicalIndicator[]">
+  Array containing the calculated technical indicators for the requested symbol.
+  
+  <Expandable title="TechnicalIndicator">
+    <ResponseField name="symbol" type="string" required>
+      The trading pair identifier.
+    </ResponseField>
+    
+    <ResponseField name="exchange" type="string" required>
+      The exchange name.
+    </ResponseField>
+    
+    <ResponseField name="timeframe" type="string" required>
+      The timeframe used for calculations (e.g., "1h").
+    </ResponseField>
+    
+    <ResponseField name="timestamp" type="string" required>
+      ISO 8601 timestamp when the indicators were calculated.
+    </ResponseField>
+    
+    <ResponseField name="current_price" type="number" required>
+      The current asset price at the time of calculation.
+    </ResponseField>
+    
+    <ResponseField name="indicators" type="object" required>
+      Object containing all calculated indicator values.
+      
+      <Expandable title="Indicator Values">
+        
+        <ResponseField name="sma_20" type="number">
+          Simple Moving Average with 20-period window. Smooths price data by calculating the average of the last 20 closing prices.
+          
+          **Interpretation:**
+          - Price > SMA: Bullish trend
+          - Price < SMA: Bearish trend
+        </ResponseField>
+        
+        <ResponseField name="sma_50" type="number">
+          Simple Moving Average with 50-period window. Longer-term trend indicator.
+          
+          **Golden Cross:** SMA20 crosses above SMA50 (bullish)
+          **Death Cross:** SMA20 crosses below SMA50 (bearish)
+        </ResponseField>
+        
+        <ResponseField name="ema_12" type="number">
+          Exponential Moving Average with 12-period window. More responsive to recent price changes than SMA.
+        </ResponseField>
+        
+        <ResponseField name="ema_26" type="number">
+          Exponential Moving Average with 26-period window. Used in MACD calculation.
+        </ResponseField>
+        
+        <ResponseField name="rsi_14" type="number">
+          Relative Strength Index with 14-period window. Momentum oscillator measuring speed and magnitude of price changes.
+          
+          **Range:** 0 to 100
+          
+          **Interpretation:**
+          - RSI > 70: Overbought (potential reversal down)
+          - RSI < 30: Oversold (potential reversal up)
+          - RSI 40-60: Neutral zone
+        </ResponseField>
+        
+        <ResponseField name="macd" type="object">
+          Moving Average Convergence Divergence indicator showing relationship between two EMAs.
+          
+          <Expandable title="MACD Components">
+            <ResponseField name="macd" type="number">
+              MACD line (EMA12 - EMA26). Shows momentum direction.
+            </ResponseField>
+            
+            <ResponseField name="signal" type="number">
+              Signal line (9-period EMA of MACD). Used for crossover signals.
+            </ResponseField>
+            
+            <ResponseField name="histogram" type="number">
+              MACD histogram (MACD - Signal). Visual representation of momentum divergence.
+              
+              **Interpretation:**
+              - Histogram > 0 and increasing: Strengthening bullish momentum
+              - Histogram < 0 and decreasing: Strengthening bearish momentum
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+        
+        <ResponseField name="bollinger_bands" type="object">
+          Volatility indicator consisting of a moving average and two standard deviation bands.
+          
+          <Expandable title="Bollinger Bands Components">
+            <ResponseField name="upper" type="number">
+              Upper band (SMA + 2 standard deviations). Potential resistance level.
+            </ResponseField>
+            
+            <ResponseField name="middle" type="number">
+              Middle band (20-period SMA). Average price level.
+            </ResponseField>
+            
+            <ResponseField name="lower" type="number">
+              Lower band (SMA - 2 standard deviations). Potential support level.
+            </ResponseField>
+          </Expandable>
+          
+          **Interpretation:**
+          - Price touching upper band: Potentially overbought
+          - Price touching lower band: Potentially oversold
+          - Narrow bands: Low volatility (consolidation)
+          - Wide bands: High volatility
+        </ResponseField>
+        
+        <ResponseField name="support_resistance" type="object">
+          Calculated support and resistance levels based on recent price action.
+          
+          <Expandable title="Support/Resistance Levels">
+            <ResponseField name="support" type="number">
+              Estimated support level (price floor where buying interest emerges).
+            </ResponseField>
+            
+            <ResponseField name="resistance" type="number">
+              Estimated resistance level (price ceiling where selling pressure emerges).
+            </ResponseField>
+          </Expandable>
+        </ResponseField>
+        
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="count" type="integer" required>
+  The number of indicator sets returned (typically 1 for single symbol request).
+</ResponseField>
+
+<ResponseField name="timestamp" type="string" required>
+  ISO 8601 timestamp when the response was generated.
+</ResponseField>
+
+## Indicator Calculations
+
+<Info>
+  **Data Requirements**
+  
+  Technical indicators require sufficient historical data:
+  - Minimum 20 data points for basic indicators (SMA, Bollinger Bands)
+  - Minimum 50 data points recommended for reliable calculations
+  - More data points = more accurate long-term indicators (SMA50, etc.)
+  
+  The system retrieves the last 50 candlesticks by default from the database.
+</Info>
+
+## Supported Indicators
+
+NeuraTrade calculates the following technical indicators:
+
+### Moving Averages
+- **SMA (Simple Moving Average):** 20, 50 periods
+- **EMA (Exponential Moving Average):** 12, 26 periods
+
+### Momentum Oscillators
+- **RSI (Relative Strength Index):** 14 periods
+- **Stochastic Oscillator:** K=14, D=3 periods
+
+### Trend Indicators
+- **MACD:** Fast=12, Slow=26, Signal=9
+- **Support/Resistance Levels:** Derived from recent highs/lows
+
+### Volatility Indicators
+- **Bollinger Bands:** Period=20, StdDev=2.0
+- **ATR (Average True Range):** 14 periods
+
+### Volume Indicators
+- **OBV (On-Balance Volume):** Cumulative volume flow
+
+<Note>
+  All indicator calculations use the **goflux** library (go-talib wrapper) for accurate, industry-standard technical analysis.
+</Note>
+
+## Examples
+
+<CodeGroup>
+
+```bash Bitcoin Indicators
+curl -X GET "https://api.neuratrade.com/api/v1/analysis/indicators?symbol=BTC/USDT&exchange=binance&timeframe=1h" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+```bash Ethereum 4-Hour Timeframe
+curl -X GET "https://api.neuratrade.com/api/v1/analysis/indicators?symbol=ETH/USDT&exchange=binance&timeframe=4h" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+```bash Solana Daily Indicators
+curl -X GET "https://api.neuratrade.com/api/v1/analysis/indicators?symbol=SOL/USDT&exchange=binance&timeframe=1d" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+</CodeGroup>
+
+<ResponseExample>
+
+```json Response Example
+{
+  "indicators": [
+    {
+      "symbol": "BTC/USDT",
+      "exchange": "binance",
+      "timeframe": "1h",
+      "timestamp": "2026-03-03T10:30:00Z",
+      "current_price": 43250.50,
+      "indicators": {
+        "sma_20": 43180.25,
+        "sma_50": 42950.75,
+        "ema_12": 43220.80,
+        "ema_26": 43050.40,
+        "rsi_14": 58.5,
+        "macd": {
+          "macd": 170.40,
+          "signal": 153.36,
+          "histogram": 17.04
+        },
+        "bollinger_bands": {
+          "upper": 43850.25,
+          "middle": 43180.25,
+          "lower": 42510.25
+        },
+        "support_resistance": {
+          "support": 42800.00,
+          "resistance": 43800.00
+        }
+      }
+    }
+  ],
+  "count": 1,
+  "timestamp": "2026-03-03T10:30:05Z"
+}
+```
+
+</ResponseExample>
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message describing what went wrong.
+</ResponseField>
+
+<ResponseExample>
+
+```json 400 Bad Request - Missing Symbol
+{
+  "error": "symbol parameter is required"
+}
+```
+
+```json 400 Bad Request - Missing Exchange
+{
+  "error": "exchange parameter is required"
+}
+```
+
+```json 400 Bad Request - Insufficient Data
+{
+  "error": "Insufficient data for technical analysis"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "error": "Failed to get market data"
+}
+```
+
+</ResponseExample>
+
+## Understanding the Indicators
+
+<Accordion title="Simple vs Exponential Moving Averages">
+  **SMA (Simple Moving Average):**
+  - Calculates arithmetic mean of prices over N periods
+  - All prices weighted equally
+  - Smoother but slower to react to price changes
+  - Better for identifying long-term trends
+  
+  **EMA (Exponential Moving Average):**
+  - Gives more weight to recent prices
+  - More responsive to new information
+  - Better for short-term trend identification
+  - Used in MACD calculation
+</Accordion>
+
+<Accordion title="RSI Divergence">
+  RSI divergence can signal potential reversals:
+  
+  **Bullish Divergence:**
+  - Price makes lower lows
+  - RSI makes higher lows
+  - Suggests weakening bearish momentum
+  
+  **Bearish Divergence:**
+  - Price makes higher highs
+  - RSI makes lower highs
+  - Suggests weakening bullish momentum
+</Accordion>
+
+<Accordion title="Bollinger Band Squeeze">
+  When Bollinger Bands narrow (low volatility), it often precedes a significant price move:
+  
+  - **Squeeze:** Bands narrow significantly
+  - **Breakout:** Price breaks above/below bands with expanding width
+  - **Direction:** Use other indicators (RSI, MACD) to predict breakout direction
+</Accordion>
+
+## Best Practices
+
+<Tip>
+  **Combine Multiple Indicators**
+  
+  No single indicator is perfect. Best practice is to:
+  - Use 2-3 indicators from different categories
+  - Confirm signals across multiple timeframes
+  - Consider volume indicators for confirmation
+  - Monitor indicator divergences
+</Tip>
+
+<Warning>
+  **Lagging vs Leading Indicators**
+  
+  Most technical indicators are **lagging** - they confirm trends after they've started:
+  - **Lagging:** SMA, EMA, MACD (good for confirmation)
+  - **Leading:** RSI, Stochastic (good for early signals, more false signals)
+  
+  Use a mix of both for balanced analysis.
+</Warning>
+
+## Related Endpoints
+
+- [Get Trading Signals](/api/analysis/signals) - Get actionable BUY/SELL/HOLD signals

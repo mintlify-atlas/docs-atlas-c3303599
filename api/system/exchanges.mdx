@@ -1,0 +1,378 @@
+---
+title: 'Exchange Management'
+description: 'Configure and monitor connected cryptocurrency exchanges'
+---
+
+## Overview
+
+Exchange management endpoints provide control over which exchanges are active, their configuration, and worker status. These endpoints support dynamic exchange addition, blacklisting, and real-time status monitoring.
+
+## GET /api/v1/exchanges/config
+
+Retrieve the current exchange configuration for all non-blacklisted exchanges.
+
+### Request
+
+```bash
+curl http://localhost:3000/api/v1/exchanges/config
+```
+
+### Response
+
+Returns exchange configuration from the CCXT service. The exact schema depends on the CCXT service implementation but typically includes:
+
+<ResponseField name="exchanges" type="array" required>
+  List of configured exchange objects
+  
+  <Expandable title="exchange object">
+    <ResponseField name="id" type="string" required>
+      Exchange identifier (e.g., `binance`, `coinbase`, `kraken`)
+    </ResponseField>
+    
+    <ResponseField name="name" type="string" required>
+      Human-readable exchange name
+    </ResponseField>
+    
+    <ResponseField name="has" type="object">
+      Capabilities supported by the exchange (e.g., `fetchTickers`, `fetchOHLCV`, `fetchOrderBook`)
+    </ResponseField>
+    
+    <ResponseField name="timeframes" type="array">
+      Supported candlestick timeframes (e.g., `1m`, `5m`, `1h`, `1d`)
+    </ResponseField>
+    
+    <ResponseField name="blacklisted" type="boolean">
+      Whether this exchange is currently blacklisted
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<Note>
+This endpoint caches results in Redis for 1 hour to reduce load on the CCXT service. The cache is automatically invalidated when exchanges are added, removed, or blacklisted.
+</Note>
+
+### Example Response
+
+```json
+{
+  "exchanges": [
+    {
+      "id": "binance",
+      "name": "Binance",
+      "has": {
+        "fetchTickers": true,
+        "fetchOHLCV": true,
+        "fetchOrderBook": true,
+        "fetchFundingRate": true
+      },
+      "timeframes": ["1m", "5m", "15m", "1h", "4h", "1d"],
+      "blacklisted": false
+    },
+    {
+      "id": "coinbase",
+      "name": "Coinbase Pro",
+      "has": {
+        "fetchTickers": true,
+        "fetchOHLCV": true,
+        "fetchOrderBook": true
+      },
+      "timeframes": ["1m", "5m", "15m", "1h", "6h", "1d"],
+      "blacklisted": false
+    }
+  ]
+}
+```
+
+---
+
+## GET /api/v1/exchanges/supported
+
+Get the list of currently supported (non-blacklisted) exchange IDs.
+
+### Request
+
+```bash
+curl http://localhost:3000/api/v1/exchanges/supported
+```
+
+### Response
+
+<ResponseField name="exchanges" type="array" required>
+  Array of exchange IDs currently active in the system
+</ResponseField>
+
+<ResponseField name="count" type="integer" required>
+  Total number of supported exchanges
+</ResponseField>
+
+<Note>
+Results are cached in Redis for 30 minutes. The cache is invalidated when the exchange configuration changes.
+</Note>
+
+### Example Response
+
+```json
+{
+  "exchanges": ["binance", "coinbase", "kraken", "bybit", "okx", "bitget"],
+  "count": 6
+}
+```
+
+---
+
+## GET /api/v1/exchanges/workers/status
+
+Get the status of exchange data collection workers.
+
+### Request
+
+```bash
+curl http://localhost:3000/api/v1/exchanges/workers/status
+```
+
+### Response
+
+<ResponseField name="message" type="string">
+  Status message (implementation pending in collector service)
+</ResponseField>
+
+<Warning>
+This endpoint is a placeholder. Worker status tracking needs to be implemented in the collector service to return detailed worker metrics.
+</Warning>
+
+### Example Response
+
+```json
+{
+  "message": "Worker status endpoint - implementation needed in collector service"
+}
+```
+
+---
+
+## POST /api/v1/exchanges/add/:exchange
+
+**Admin Only** - Dynamically add and initialize a new exchange.
+
+### Authentication
+
+Requires `ADMIN_API_KEY` in the `X-Admin-Key` header.
+
+### Request
+
+```bash
+curl -X POST \
+  -H "X-Admin-Key: your-admin-api-key" \
+  http://localhost:3000/api/v1/exchanges/add/binance
+```
+
+### Path Parameters
+
+<ParamField path="exchange" type="string" required>
+  Exchange ID to add (e.g., `binance`, `kraken`, `bybit`)
+</ParamField>
+
+### Response
+
+Returns the response from the CCXT service indicating success or failure.
+
+### Side Effects
+
+1. Adds the exchange to the CCXT service configuration
+2. Restarts the collector service to begin data collection
+3. Invalidates exchange configuration cache
+
+<Warning>
+Adding an exchange requires the ADMIN_API_KEY and will restart the collector service, causing a brief interruption in data collection for all exchanges.
+</Warning>
+
+---
+
+## POST /api/v1/exchanges/refresh
+
+**Admin Only** - Refresh configuration for all non-blacklisted exchanges.
+
+### Authentication
+
+Requires `ADMIN_API_KEY` in the `X-Admin-Key` header.
+
+### Request
+
+```bash
+curl -X POST \
+  -H "X-Admin-Key: your-admin-api-key" \
+  http://localhost:3000/api/v1/exchanges/refresh
+```
+
+### Response
+
+Returns the refresh response from the CCXT service.
+
+### Side Effects
+
+1. Refreshes exchange metadata from CCXT
+2. Restarts the collector service to apply changes
+3. Invalidates all exchange-related caches
+
+<Note>
+Use this endpoint after updating exchange API credentials or when exchanges add new trading pairs or features.
+</Note>
+
+---
+
+## POST /api/v1/exchanges/blacklist/:exchange
+
+**Admin Only** - Add an exchange to the blacklist to stop data collection.
+
+### Authentication
+
+Requires `ADMIN_API_KEY` in the `X-Admin-Key` header.
+
+### Request
+
+```bash
+curl -X POST \
+  -H "X-Admin-Key: your-admin-api-key" \
+  http://localhost:3000/api/v1/exchanges/blacklist/coinbase
+```
+
+### Path Parameters
+
+<ParamField path="exchange" type="string" required>
+  Exchange ID to blacklist (e.g., `coinbase`, `kraken`)
+</ParamField>
+
+### Response
+
+Returns the blacklist response from the CCXT service.
+
+### Side Effects
+
+1. Adds the exchange to the blacklist in CCXT service
+2. Attempts to restart the exchange worker (non-blocking)
+3. Invalidates exchange configuration and supported exchanges cache
+4. Sets `X-Worker-Restart-Warning` header if worker restart fails
+
+<Note>
+Blacklisting an exchange stops all data collection and API calls to that exchange. This is useful when an exchange is experiencing downtime or API issues.
+</Note>
+
+---
+
+## DELETE /api/v1/exchanges/blacklist/:exchange
+
+**Admin Only** - Remove an exchange from the blacklist to resume data collection.
+
+### Authentication
+
+Requires `ADMIN_API_KEY` in the `X-Admin-Key` header.
+
+### Request
+
+```bash
+curl -X DELETE \
+  -H "X-Admin-Key: your-admin-api-key" \
+  http://localhost:3000/api/v1/exchanges/blacklist/coinbase
+```
+
+### Path Parameters
+
+<ParamField path="exchange" type="string" required>
+  Exchange ID to remove from blacklist
+</ParamField>
+
+### Response
+
+Returns the unblacklist response from the CCXT service.
+
+### Side Effects
+
+1. Removes the exchange from the blacklist
+2. Attempts to restart the exchange worker to resume collection
+3. Invalidates exchange configuration cache
+4. Sets `X-Worker-Restart-Info` header with restart status
+
+---
+
+## POST /api/v1/exchanges/workers/:exchange/restart
+
+**Admin Only** - Restart the data collection worker for a specific exchange.
+
+### Authentication
+
+Requires `ADMIN_API_KEY` in the `X-Admin-Key` header.
+
+### Request
+
+```bash
+curl -X POST \
+  -H "X-Admin-Key: your-admin-api-key" \
+  http://localhost:3000/api/v1/exchanges/workers/binance/restart
+```
+
+### Path Parameters
+
+<ParamField path="exchange" type="string" required>
+  Exchange ID for worker restart
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string" required>
+  Success message
+</ResponseField>
+
+<ResponseField name="exchange" type="string" required>
+  Exchange ID that was restarted
+</ResponseField>
+
+### Example Response
+
+```json
+{
+  "message": "Worker restarted successfully",
+  "exchange": "binance"
+}
+```
+
+### Error Responses
+
+- **400 Bad Request**: Exchange parameter missing
+- **503 Service Unavailable**: Collector service not available
+- **500 Internal Server Error**: Worker restart failed
+
+<Warning>
+Restarting a worker briefly interrupts data collection for that exchange. Active arbitrage strategies using that exchange may experience delays.
+</Warning>
+
+---
+
+## Exchange Connectivity Checks
+
+All exchange configuration changes trigger automatic connectivity validation:
+
+1. **Health Check**: Verifies the exchange API is reachable
+2. **Capability Check**: Confirms required endpoints (fetchTickers, fetchOrderBook) are available
+3. **Rate Limit Validation**: Ensures API rate limits are configured correctly
+4. **Worker Initialization**: Starts or restarts data collection workers
+
+### Cache Invalidation Strategy
+
+The exchange handler invalidates caches on configuration changes:
+
+- **Add/Remove Exchange**: Clears `exchange:config` and `exchange:supported` caches
+- **Blacklist Change**: Clears `exchange:config` and `exchange:supported` caches  
+- **Refresh**: Clears all exchange-related caches
+
+### Redis Cache Keys
+
+- `exchange:config` - Full exchange configuration (1 hour TTL)
+- `exchange:supported` - List of supported exchange IDs (30 minute TTL)
+
+---
+
+## Source Reference
+
+Exchange endpoints are implemented in:
+- Handler: `services/backend-api/internal/api/handlers/exchange.go:64-375`
+- Route Registration: `services/backend-api/internal/api/routes.go:1142-1160`

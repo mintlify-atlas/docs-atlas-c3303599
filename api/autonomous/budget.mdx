@@ -1,0 +1,319 @@
+---
+title: "Budget API"
+description: "Monitor AI usage costs and enforce daily/monthly spending limits."
+---
+
+# Budget API
+
+The Budget API tracks AI provider costs and enforces spending limits to prevent runaway expenses.
+
+## Get Budget Status
+
+<RequestExample>
+```bash
+curl -X GET "https://api.neuratrade.ai/api/v1/budget/status" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "daily": {
+    "used": "2.45",
+    "remaining": "7.55",
+    "percent_used": 24.5
+  },
+  "monthly": {
+    "used": "38.20",
+    "remaining": "161.80",
+    "percent_used": 19.1
+  },
+  "limits": {
+    "daily": "10.00",
+    "monthly": "200.00"
+  }
+}
+```
+</ResponseExample>
+
+Returns current AI usage and remaining budget for daily and monthly periods.
+
+### Response Fields
+
+<ResponseField name="daily" type="object">
+  Daily budget status
+  
+  <Expandable title="Daily Budget Fields">
+    <ResponseField name="used" type="string">
+      Amount spent today in USD (2 decimal precision)
+    </ResponseField>
+    
+    <ResponseField name="remaining" type="string">
+      Remaining daily budget in USD
+    </ResponseField>
+    
+    <ResponseField name="percent_used" type="number">
+      Percentage of daily budget consumed (0-100)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="monthly" type="object">
+  Monthly budget status (same structure as `daily`)
+</ResponseField>
+
+<ResponseField name="limits" type="object">
+  Configured budget limits
+  
+  <Expandable title="Limit Fields">
+    <ResponseField name="daily" type="string">
+      Daily spending limit in USD
+    </ResponseField>
+    
+    <ResponseField name="monthly" type="string">
+      Monthly spending limit in USD
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+---
+
+## Check Budget Availability
+
+<RequestExample>
+```bash
+curl -X GET "https://api.neuratrade.ai/api/v1/budget/check" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+</RequestExample>
+
+<ResponseExample>
+```json
+{
+  "allowed": true
+}
+```
+</ResponseExample>
+
+Verifies whether budget is available before making an AI call.
+
+### Response Fields
+
+<ResponseField name="allowed" type="boolean">
+  `true` if budget is available, `false` if exceeded
+</ResponseField>
+
+### Error Responses
+
+When budget is exceeded:
+
+**Daily Limit Exceeded (429)**
+```json
+{
+  "error": "daily budget exceeded",
+  "limit": "10.00",
+  "reset_at": "2026-03-04T00:00:00Z"
+}
+```
+
+**Monthly Limit Exceeded (429)**
+```json
+{
+  "error": "monthly budget exceeded",
+  "limit": "200.00",
+  "reset_at": "2026-04-01T00:00:00Z"
+}
+```
+
+<Warning>
+  When budget limits are exceeded, all AI agent operations will be **blocked** until the next reset period. Quest execution continues but AI-powered reasoning is disabled.
+</Warning>
+
+---
+
+## Budget Configuration
+
+Budget limits are configured via environment variables:
+
+```bash
+# Daily AI spending limit (default: $10.00)
+AI_DAILY_BUDGET="10.00"
+
+# Monthly AI spending limit (default: $200.00)
+AI_MONTHLY_BUDGET="200.00"
+```
+
+### Default Limits
+
+If not configured:
+- Daily: **$10.00 USD**
+- Monthly: **$200.00 USD**
+
+These defaults are designed for moderate autonomous trading activity with LLM-powered decision making.
+
+---
+
+## Budget Tracking
+
+Usage is tracked in the `ai_usage_logs` table:
+
+### Schema
+
+```sql
+CREATE TABLE ai_usage_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  chat_id TEXT,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  total_tokens INTEGER NOT NULL,
+  cost_usd REAL NOT NULL,
+  request_type TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### Cost Calculation
+
+Costs are calculated using provider-specific token pricing:
+
+| Provider | Input (per 1M tokens) | Output (per 1M tokens) |
+|----------|----------------------|------------------------|
+| **Zhipu GLM-4-Flash** | $0.10 | $0.10 |
+| **MiniMax abab6.5s** | $0.50 | $0.50 |
+| **Anthropic Claude 3.5** | $3.00 | $15.00 |
+| **MLX Local** | $0.00 | $0.00 |
+
+<Info>
+  Pricing is approximate and may vary. Check your provider's official pricing for exact rates.
+</Info>
+
+---
+
+## Budget Alerts
+
+Alerts are triggered at usage thresholds:
+
+### Daily Thresholds
+
+- **50%** - Warning notification
+- **75%** - High usage alert
+- **90%** - Critical alert
+- **100%** - Budget exhausted, AI disabled
+
+### Monthly Thresholds
+
+- **60%** - Warning notification
+- **80%** - High usage alert
+- **95%** - Critical alert
+- **100%** - Budget exhausted, AI disabled
+
+Notifications are sent via:
+- Telegram messages (if configured)
+- Quest diagnostics (`quest_runtime` field)
+- System logs
+
+---
+
+## Budget Enforcement
+
+When budget is exceeded:
+
+1. **AI Calls Blocked**: All LLM provider requests return 429 errors
+2. **Quest Execution**: Continues but falls back to non-AI logic
+3. **Notifications**: Admin receives budget exhaustion alert
+4. **Reset**: Automatic at next period boundary (midnight UTC for daily, 1st of month for monthly)
+
+### Bypass (Emergency Only)
+
+To temporarily bypass budget limits:
+
+```bash
+# Disable budget enforcement (NOT RECOMMENDED)
+export NEURATRADE_BYPASS_BUDGET_LIMITS=true
+```
+
+<Warning>
+  Bypassing budget limits can lead to unexpected costs. Only use in controlled testing environments.
+</Warning>
+
+---
+
+## Fund Tracking
+
+The AI Fund Tracker monitors portfolio growth toward target values:
+
+### Fund Status
+
+```json
+{
+  "current_value": 125.50,
+  "start_value": 100.00,
+  "target_value": 1000.00,
+  "progress_percent": 12.55,
+  "milestones_total": 5,
+  "milestones_achieved": 1,
+  "performance": {
+    "total_return": 25.50,
+    "total_return_pct": 25.5,
+    "daily_return": 0.02,
+    "sharpe_ratio": 1.8,
+    "max_drawdown": 0.035
+  }
+}
+```
+
+### Milestones
+
+AI-generated milestones mark progress:
+
+```json
+{
+  "milestones": [
+    {
+      "id": "ai_m1",
+      "target_value": 250.00,
+      "target_percent": 25,
+      "description": "Quarter milestone - establish consistent trading",
+      "reasoning": "First milestone focuses on stability and risk management",
+      "status": "pending",
+      "created_at": "2026-03-01T00:00:00Z"
+    },
+    {
+      "id": "ai_m2",
+      "target_value": 500.00,
+      "target_percent": 50,
+      "description": "Halfway point - optimize strategies",
+      "status": "pending"
+    }
+  ]
+}
+```
+
+### Milestone Alerts
+
+When a milestone is achieved:
+
+```json
+{
+  "type": "milestone_achieved",
+  "milestone_id": "ai_m1",
+  "target_value": 250.00,
+  "current_value": 252.30,
+  "achieved_at": "2026-03-15T14:23:10Z"
+}
+```
+
+<Info>
+  Milestone generation uses AI reasoning to adapt targets based on performance velocity and market conditions.
+</Info>
+
+---
+
+## Related Endpoints
+
+- [Quest API](/api/autonomous/quests) - Quest execution status
+- [Agents API](/api/autonomous/agents) - AI agent configuration

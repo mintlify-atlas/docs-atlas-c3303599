@@ -1,0 +1,856 @@
+---
+title: 'Telegram Bot Setup'
+description: 'Complete guide to setting up and configuring the NeuraTrade Telegram bot'
+icon: 'telegram'
+---
+
+# Telegram Bot Setup Guide
+
+NeuraTrade's Telegram bot provides real-time notifications, trading status updates, and interactive command-based control of your autonomous trading system.
+
+## Overview
+
+The Telegram service integrates with NeuraTrade's backend API to deliver:
+
+- **Real-time notifications** for trading events, risk alerts, and system status
+- **Interactive commands** to control trading modes, check balances, and monitor positions
+- **Autonomous mode controls** to start/pause trading and view AI reasoning
+- **Quest progress tracking** for gamified trading achievements
+- **Wallet management** for balance checks and position monitoring
+
+## Prerequisites
+
+- Active Telegram account
+- Running NeuraTrade backend (see [Native Deployment](/guides/native-deployment))
+- Access to create Telegram bots via [@BotFather](https://t.me/BotFather)
+
+## Step 1: Create Telegram Bot
+
+Create your bot using Telegram's official BotFather.
+
+<Steps>
+  <Step title="Open BotFather">
+    Open Telegram and search for [@BotFather](https://t.me/BotFather) or click the link to start a chat.
+  </Step>
+
+  <Step title="Create new bot">
+    Send the `/newbot` command:
+    
+    ```
+    /newbot
+    ```
+    
+    BotFather will ask for a name and username for your bot.
+  </Step>
+
+  <Step title="Set bot name">
+    Choose a display name (can contain spaces):
+    
+    ```
+    NeuraTrade Bot
+    ```
+  </Step>
+
+  <Step title="Set bot username">
+    Choose a unique username (must end in 'bot'):
+    
+    ```
+    neuratrade_yourname_bot
+    ```
+    
+    <Note>
+    The username must be unique across all Telegram bots. If taken, try adding numbers or your name.
+    </Note>
+  </Step>
+
+  <Step title="Save bot token">
+    BotFather will respond with your bot token:
+    
+    ```
+    Done! Congratulations on your new bot...
+    
+    Use this token to access the HTTP API:
+    1234567890:ABCdefGHIjklMNOpqrsTUVwxyz1234567890
+    ```
+    
+    <Warning>
+    **Keep this token secret!** Anyone with this token can control your bot. Never commit it to version control.
+    </Warning>
+    
+    Save this token - you'll need it for configuration.
+  </Step>
+</Steps>
+
+## Step 2: Configure Bot Settings
+
+Optimize your bot's appearance and behavior.
+
+### Set Bot Description
+
+```
+/setdescription @neuratrade_yourname_bot
+```
+
+Example description:
+```
+Autonomous trading assistant powered by NeuraTrade. 
+Monitor your portfolio, control trading modes, and receive real-time alerts.
+```
+
+### Set Bot About Text
+
+```
+/setabouttext @neuratrade_yourname_bot
+```
+
+Example:
+```
+NeuraTrade AI Trading Bot - Your 24/7 trading companion
+```
+
+### Set Bot Profile Picture
+
+```
+/setuserpic @neuratrade_yourname_bot
+```
+
+Then upload a 512x512 PNG image (the NeuraTrade logo works great!).
+
+### Configure Commands Menu
+
+The Telegram service automatically registers commands with Telegram when it starts. You can also set them manually:
+
+```
+/setcommands @neuratrade_yourname_bot
+```
+
+Then paste this command list:
+
+```
+start - Initialize bot and show welcome message
+help - Show available commands and usage
+menu - Display interactive menu
+status - Show autonomous trading status
+wallet - View account balance and positions
+performance - Show trading performance metrics
+monitor - View real-time monitoring dashboard
+liquidate - Emergency liquidate position
+liquidate_all - Emergency liquidate all positions
+begin - Start autonomous trading mode
+pause - Pause autonomous trading
+settings - Configure bot preferences
+ai - AI model and reasoning controls
+```
+
+<Tip>
+The bot automatically updates the command menu when started in polling mode. The commands above are registered via the grammY framework.
+</Tip>
+
+## Step 3: Configure NeuraTrade
+
+Add your bot token to NeuraTrade's configuration.
+
+### Environment Variable Method
+
+Export the token as an environment variable:
+
+```bash
+export TELEGRAM_BOT_TOKEN="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz1234567890"
+```
+
+Add to your shell profile for persistence:
+
+<CodeGroup>
+```bash ~/.bashrc
+# NeuraTrade Telegram Bot
+export TELEGRAM_BOT_TOKEN="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz1234567890"
+```
+
+```bash ~/.zshrc
+# NeuraTrade Telegram Bot
+export TELEGRAM_BOT_TOKEN="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz1234567890"
+```
+</CodeGroup>
+
+### Config File Method
+
+Edit `~/.neuratrade/config.json`:
+
+```json
+{
+  "telegram": {
+    "bot_token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz1234567890",
+    "use_polling": true,
+    "port": 3002
+  },
+  "services": {
+    "telegram": {
+      "enabled": true,
+      "bot_token": "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz1234567890",
+      "api_base_url": "http://localhost:8080",
+      "use_polling": true,
+      "port": 3002
+    }
+  }
+}
+```
+
+<Note>
+The config file supports both root-level `telegram` and nested `services.telegram` for backwards compatibility.
+</Note>
+
+## Step 4: Choose Deployment Mode
+
+NeuraTrade supports two Telegram bot deployment modes.
+
+### Polling Mode (Recommended for Development)
+
+Polling mode is simpler and works behind firewalls/NAT.
+
+**Configuration:**
+
+```bash
+export TELEGRAM_USE_POLLING=true
+```
+
+Or in `config.json`:
+
+```json
+{
+  "telegram": {
+    "use_polling": true
+  }
+}
+```
+
+**Advantages:**
+- No public IP or domain required
+- Works behind NAT/firewalls
+- Easier local development
+- Simpler setup
+
+**Disadvantages:**
+- Higher latency (1-2 second polling interval)
+- More resource usage (constant polling)
+- Not recommended for production at scale
+
+**How it works:**
+
+The Telegram service continuously polls Telegram's API for new updates:
+
+```typescript
+bot.start({
+  onStart: (botInfo) => {
+    logger.info("Bot polling started", {
+      botId: botInfo.id,
+      username: botInfo.username
+    });
+  }
+});
+```
+
+Reference: `services/telegram-service/index.ts:194`
+
+### Webhook Mode (Recommended for Production)
+
+Webhook mode is more efficient and has lower latency.
+
+**Requirements:**
+- Public domain with HTTPS
+- Valid SSL certificate
+- Reverse proxy (nginx/Caddy)
+
+**Configuration:**
+
+```bash
+export TELEGRAM_USE_POLLING=false
+export TELEGRAM_WEBHOOK_URL="https://yourdomain.com/telegram/webhook"
+export TELEGRAM_WEBHOOK_SECRET="$(openssl rand -hex 32)"
+```
+
+Or in `config.json`:
+
+```json
+{
+  "telegram": {
+    "use_polling": false,
+    "webhook_url": "https://yourdomain.com/telegram/webhook",
+    "webhook_secret": "your-random-secret-here"
+  }
+}
+```
+
+**Advantages:**
+- Lower latency (instant updates)
+- More efficient (no polling)
+- Better for production scale
+- Lower resource usage
+
+**Disadvantages:**
+- Requires public domain + HTTPS
+- More complex setup
+- Certificate management
+
+**How it works:**
+
+Telegram sends updates directly to your webhook endpoint:
+
+```typescript
+app.post(config.webhookPath, async (c) => {
+  // Verify webhook secret
+  if (config.webhookSecret) {
+    const provided = c.req.header("X-Telegram-Bot-Api-Secret-Token");
+    if (!provided || provided !== config.webhookSecret) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+  }
+  
+  const update = await c.req.json();
+  await bot.handleUpdate(update);
+  return c.json({ ok: true });
+});
+```
+
+Reference: `services/telegram-service/index.ts:121`
+
+### nginx Configuration Example
+
+For webhook mode with nginx reverse proxy:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name yourdomain.com;
+    
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+    
+    location /telegram/webhook {
+        proxy_pass http://127.0.0.1:3002/telegram/webhook;
+        proxy_http_version 1.1;
+        proxy_set_header X-Telegram-Bot-Api-Secret-Token $http_x_telegram_bot_api_secret_token;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+## Step 5: Start Telegram Service
+
+Start the service and verify bot connectivity.
+
+### Via Gateway CLI
+
+```bash
+neuratrade gateway start
+```
+
+The gateway starts the Telegram service automatically and monitors its health.
+
+### Standalone Mode (Development)
+
+For development, you can run the Telegram service directly:
+
+```bash
+cd services/telegram-service
+bun run index.ts
+```
+
+**Expected Output:**
+
+<CodeGroup>
+```bash Polling Mode
+Telegram service started {
+  port: 3002,
+  hostname: "0.0.0.0",
+  mode: "polling"
+}
+Starting bot in polling mode
+Webhook deleted successfully
+Starting polling...
+Bot polling started successfully {
+  botId: 1234567890,
+  username: "neuratrade_yourname_bot"
+}
+```
+
+```bash Webhook Mode
+Telegram service started {
+  port: 3002,
+  hostname: "0.0.0.0",
+  mode: "webhook"
+}
+Setting Telegram webhook {
+  webhookUrl: "https://yourdomain.com/telegram/webhook"
+}
+```
+</CodeGroup>
+
+### Verify Service Health
+
+```bash
+curl http://localhost:3002/health
+```
+
+**Response:**
+
+```json
+{
+  "status": "healthy",
+  "service": "telegram-service",
+  "bot_active": true
+}
+```
+
+<Warning>
+If `TELEGRAM_BOT_TOKEN` is not configured, the service returns:
+
+```json
+{
+  "status": "degraded",
+  "service": "telegram-service",
+  "error": "TELEGRAM_BOT_TOKEN not configured",
+  "bot_active": false
+}
+```
+
+The service runs in degraded mode (health endpoint only) until the token is configured.
+</Warning>
+
+## Step 6: Bind Your Chat ID
+
+Link your Telegram account to NeuraTrade for personalized notifications.
+
+<Steps>
+  <Step title="Get your chat ID">
+    Start a conversation with your bot:
+    
+    1. Search for your bot username in Telegram
+    2. Click "Start" or send `/start`
+    3. Your chat ID will be in the welcome message
+    
+    Alternatively, use [@userinfobot](https://t.me/userinfobot):
+    - Send any message to @userinfobot
+    - It replies with your user ID (this is your chat ID)
+  </Step>
+
+  <Step title="Generate binding code">
+    Generate a one-time authentication code:
+    
+    ```bash
+    neuratrade generate-auth-code
+    ```
+    
+    Or via API:
+    ```bash
+    curl -X POST http://localhost:8080/api/v1/telegram/generate-binding-code \
+      -H "Content-Type: application/json" \
+      -H "X-API-Key: $ADMIN_API_KEY" \
+      -d '{"user_id": "operator"}'
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "success": true,
+      "message": "Binding code generated successfully",
+      "user_id": "operator",
+      "expires_at": "2026-03-03T11:00:00Z"
+    }
+    ```
+    
+    The code is printed in the backend logs or returned in the response.
+  </Step>
+
+  <Step title="Bind via CLI">
+    Use the CLI to bind your chat:
+    
+    ```bash
+    neuratrade operator bind --auth-code ABC123XYZ --chat-id 123456789
+    ```
+    
+    **Output:**
+    ```
+    ✅ Operator binding successful!
+    Saved chat ID to /home/user/.neuratrade/config.json
+    ```
+  </Step>
+
+  <Step title="Test binding">
+    Send a command to your bot:
+    
+    ```
+    /status
+    ```
+    
+    If bound correctly, you'll receive your trading status.
+  </Step>
+</Steps>
+
+<Note>
+Binding codes expire after 15 minutes for security. Generate a new code if expired.
+</Note>
+
+## Step 7: Test Bot Commands
+
+Verify your bot responds to commands.
+
+### Basic Commands
+
+<Tabs>
+  <Tab title="/start">
+    Initializes the bot and shows welcome message:
+    
+    ```
+    /start
+    ```
+    
+    **Bot Response:**
+    ```
+    Welcome to NeuraTrade! 🤖
+    
+    Your autonomous trading assistant is ready.
+    Use /help to see available commands.
+    ```
+  </Tab>
+  
+  <Tab title="/help">
+    Shows available commands:
+    
+    ```
+    /help
+    ```
+    
+    Lists all commands with descriptions.
+  </Tab>
+  
+  <Tab title="/menu">
+    Displays interactive menu with buttons:
+    
+    ```
+    /menu
+    ```
+    
+    Shows inline keyboard with quick actions.
+  </Tab>
+  
+  <Tab title="/status">
+    Shows autonomous trading status:
+    
+    ```
+    /status
+    ```
+    
+    **Bot Response:**
+    ```
+    📊 Autonomous Trading Status
+    
+    Mode: PAUSED
+    Uptime: 2h 15m
+    Active Positions: 0
+    24h PnL: +$0.00
+    
+    Use /begin to start trading.
+    ```
+  </Tab>
+</Tabs>
+
+### Trading Commands
+
+<Tabs>
+  <Tab title="/wallet">
+    View account balance:
+    
+    ```
+    /wallet
+    ```
+    
+    **Response:**
+    ```
+    💰 Wallet Balance
+    
+    Total: $10,000.00 USDT
+    Available: $10,000.00
+    In Orders: $0.00
+    
+    Positions: 0 open
+    ```
+  </Tab>
+  
+  <Tab title="/begin">
+    Start autonomous trading:
+    
+    ```
+    /begin
+    ```
+    
+    Runs readiness checks before starting:
+    ```
+    ⏳ Running readiness checks...
+    
+    ✅ Exchange connectivity
+    ✅ API permissions
+    ✅ Balance requirements
+    ✅ Risk limits configured
+    
+    🚀 Autonomous trading started!
+    ```
+  </Tab>
+  
+  <Tab title="/pause">
+    Pause trading:
+    
+    ```
+    /pause
+    ```
+    
+    **Response:**
+    ```
+    ⏸️ Autonomous trading paused.
+    
+    Open positions remain active.
+    Use /begin to resume.
+    ```
+  </Tab>
+</Tabs>
+
+### Monitoring Commands
+
+```
+/performance
+```
+
+Shows trading performance metrics:
+
+```
+📈 Performance Report
+
+Total Trades: 42
+Win Rate: 65.5%
+Profit Factor: 1.8
+
+24h PnL: +$125.50 (+1.26%)
+7d PnL: +$890.00 (+9.12%)
+30d PnL: +$3,245.00 (+48.2%)
+
+Best Trade: +$89.50
+Worst Trade: -$32.00
+```
+
+## Troubleshooting
+
+### Bot Not Responding
+
+<AccordionGroup>
+  <Accordion title="Invalid bot token">
+    Test your token:
+    ```bash
+    curl https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getMe
+    ```
+    
+    If invalid:
+    ```json
+    {
+      "ok": false,
+      "error_code": 401,
+      "description": "Unauthorized"
+    }
+    ```
+    
+    Generate a new token from @BotFather:
+    ```
+    /token @neuratrade_yourname_bot
+    ```
+  </Accordion>
+
+  <Accordion title="Service not running">
+    Check service status:
+    ```bash
+    neuratrade gateway status
+    ```
+    
+    Look for:
+    ```
+    ✅ Telegram Service: Running (PID: 12347)
+    ```
+    
+    Check logs:
+    ```bash
+    tail -f ~/.neuratrade/logs/telegram.log
+    ```
+  </Accordion>
+
+  <Accordion title="Polling vs Webhook conflict">
+    If webhook is set but you're using polling mode:
+    
+    ```bash
+    # Delete webhook
+    curl https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/deleteWebhook
+    
+    # Restart service
+    neuratrade gateway stop
+    neuratrade gateway start
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Commands Return Errors
+
+<AccordionGroup>
+  <Accordion title="Chat ID not bound">
+    Bind your chat ID:
+    ```bash
+    neuratrade operator bind --auth-code CODE --chat-id YOUR_CHAT_ID
+    ```
+  </Accordion>
+
+  <Accordion title="Backend API unreachable">
+    Verify backend is running:
+    ```bash
+    curl http://localhost:8080/health
+    ```
+    
+    Check `TELEGRAM_API_BASE_URL`:
+    ```bash
+    echo $TELEGRAM_API_BASE_URL
+    # Should be: http://localhost:8080
+    ```
+  </Accordion>
+
+  <Accordion title="Permission errors">
+    Check `ADMIN_API_KEY` is set:
+    ```bash
+    echo $ADMIN_API_KEY
+    ```
+    
+    Telegram service needs this to call internal backend endpoints.
+  </Accordion>
+</AccordionGroup>
+
+### Webhook Issues
+
+<AccordionGroup>
+  <Accordion title="Webhook not receiving updates">
+    Check webhook status:
+    ```bash
+    curl https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/getWebhookInfo
+    ```
+    
+    Look for:
+    ```json
+    {
+      "ok": true,
+      "result": {
+        "url": "https://yourdomain.com/telegram/webhook",
+        "has_custom_certificate": false,
+        "pending_update_count": 0,
+        "last_error_date": 0
+      }
+    }
+    ```
+    
+    If `pending_update_count` is growing, Telegram can't reach your webhook.
+  </Accordion>
+
+  <Accordion title="SSL certificate errors">
+    Verify your SSL certificate:
+    ```bash
+    curl -v https://yourdomain.com/telegram/webhook
+    ```
+    
+    Telegram requires:
+    - Valid SSL certificate (Let's Encrypt works)
+    - Certificate chain must be complete
+    - No self-signed certificates
+  </Accordion>
+
+  <Accordion title="Webhook secret mismatch">
+    The service checks `X-Telegram-Bot-Api-Secret-Token` header.
+    
+    If failing, check your secret:
+    ```bash
+    echo $TELEGRAM_WEBHOOK_SECRET
+    ```
+    
+    Update webhook with correct secret:
+    ```bash
+    curl -X POST https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook \
+      -d "url=https://yourdomain.com/telegram/webhook" \
+      -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Configuration Reference
+
+Complete Telegram configuration options:
+
+```json ~/.neuratrade/config.json
+{
+  "telegram": {
+    "enabled": true,
+    "bot_token": "YOUR_BOT_TOKEN",
+    "use_polling": true,
+    "port": 3002,
+    "webhook_url": "https://yourdomain.com/telegram/webhook",
+    "webhook_path": "/telegram/webhook",
+    "webhook_secret": "your-secret",
+    "api_base_url": "http://localhost:8080",
+    "chat_id": "123456789"
+  },
+  "services": {
+    "telegram": {
+      "enabled": true,
+      "bot_token": "YOUR_BOT_TOKEN",
+      "use_polling": true,
+      "port": 3002,
+      "api_base_url": "http://localhost:8080"
+    }
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TELEGRAM_BOT_TOKEN` | - | **Required.** Bot token from @BotFather |
+| `TELEGRAM_USE_POLLING` | `true` | Use polling mode (vs webhook) |
+| `TELEGRAM_PORT` | `3002` | Service HTTP port |
+| `TELEGRAM_WEBHOOK_URL` | - | Public webhook URL (webhook mode only) |
+| `TELEGRAM_WEBHOOK_PATH` | `/telegram/webhook` | Webhook endpoint path |
+| `TELEGRAM_WEBHOOK_SECRET` | - | Secret token for webhook validation |
+| `TELEGRAM_API_BASE_URL` | `http://localhost:8080` | Backend API URL |
+| `ADMIN_API_KEY` | - | Admin API key for internal endpoints |
+| `BIND_HOST` | `0.0.0.0` | Service bind address |
+
+## Source Code Reference
+
+Key implementation files:
+
+- `services/telegram-service/index.ts:1` - Main service entry point
+- `services/telegram-service/config.ts:140` - Configuration loader
+- `services/telegram-service/src/commands/` - Command handlers
+- `services/telegram-service/bot-handlers.ts` - Bot event handlers
+- `services/telegram-service/index.ts:56` - Health endpoint
+- `services/telegram-service/index.ts:121` - Webhook handler
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Gateway CLI" icon="terminal" href="/guides/gateway-cli">
+    Learn gateway commands
+  </Card>
+  
+  <Card title="Monitoring" icon="chart-line" href="/guides/monitoring">
+    Monitor system health
+  </Card>
+  
+  <Card title="Autonomous Trading" icon="robot" href="/essentials/autonomous-mode">
+    Start autonomous trading
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api-reference/telegram">
+    Telegram API endpoints
+  </Card>
+</CardGroup>

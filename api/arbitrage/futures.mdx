@@ -1,0 +1,253 @@
+---
+title: 'Get Futures Arbitrage Opportunities'
+api: 'GET /api/v1/futures/opportunities'
+description: 'Identify funding rate arbitrage opportunities across perpetual futures exchanges'
+---
+
+## Overview
+
+This endpoint calculates arbitrage opportunities based on funding rate differences across perpetual futures exchanges. By taking opposite positions (long on one exchange, short on another) on the same symbol, traders can profit from funding rate payments while maintaining a market-neutral position.
+
+## Query Parameters
+
+<ParamField query="min_profit" type="number" default="0.01">
+  Minimum daily profit percentage (as decimal). Default `0.01` = 1% daily
+</ParamField>
+
+<ParamField query="max_risk" type="number" default="3.0">
+  Maximum risk score threshold (1.0 - 5.0). Lower values return safer opportunities
+</ParamField>
+
+<ParamField query="limit" type="integer" default="20">
+  Maximum number of opportunities to return (1-100)
+</ParamField>
+
+<ParamField query="symbols[]" type="string[]">
+  Filter by specific futures symbols. If empty, defaults to:
+  `BTC/USDT:USDT`, `ETH/USDT:USDT`, `BNB/USDT:USDT`, `SOL/USDT:USDT`, `ADA/USDT:USDT`, `DOT/USDT:USDT`, `MATIC/USDT:USDT`, `AVAX/USDT:USDT`, `LINK/USDT:USDT`, `UNI/USDT:USDT`, `XRP/USDT:USDT`, `DOGE/USDT:USDT`
+</ParamField>
+
+<ParamField query="exchanges[]" type="string[]">
+  Filter by specific exchanges. Defaults to: `binance`, `bybit`, `okx`, `bitget`
+</ParamField>
+
+## Response
+
+<ResponseField name="opportunities" type="array">
+  List of funding rate arbitrage opportunities
+  
+  <Expandable title="opportunity object">
+    <ResponseField name="symbol" type="string">
+      Futures symbol (e.g., `BTC/USDT:USDT`)
+    </ResponseField>
+    
+    <ResponseField name="longExchange" type="string">
+      Exchange to open long position (lower/negative funding rate)
+    </ResponseField>
+    
+    <ResponseField name="shortExchange" type="string">
+      Exchange to open short position (higher/positive funding rate)
+    </ResponseField>
+    
+    <ResponseField name="longFundingRate" type="number">
+      Funding rate on the long exchange (as decimal, e.g., `0.0001` = 0.01%)
+    </ResponseField>
+    
+    <ResponseField name="shortFundingRate" type="number">
+      Funding rate on the short exchange (as decimal)
+    </ResponseField>
+    
+    <ResponseField name="netFundingRate" type="number">
+      Net funding rate difference: `shortFundingRate - longFundingRate`
+    </ResponseField>
+    
+    <ResponseField name="estimatedProfit8h" type="number">
+      Estimated profit over 8 hours (one funding period) as percentage
+    </ResponseField>
+    
+    <ResponseField name="estimatedProfitDaily" type="number">
+      Estimated daily profit as percentage (annualized: `netFundingRate * 3 * 365`)
+    </ResponseField>
+    
+    <ResponseField name="estimatedProfitPercentage" type="number">
+      Profit percentage for the funding interval
+    </ResponseField>
+    
+    <ResponseField name="longMarkPrice" type="number">
+      Mark price on the long exchange
+    </ResponseField>
+    
+    <ResponseField name="shortMarkPrice" type="number">
+      Mark price on the short exchange
+    </ResponseField>
+    
+    <ResponseField name="priceDifference" type="number">
+      Absolute price difference between exchanges
+    </ResponseField>
+    
+    <ResponseField name="priceDifferencePercentage" type="number">
+      Price difference as percentage
+    </ResponseField>
+    
+    <ResponseField name="riskScore" type="number">
+      Calculated risk score (1.0 = very low risk, 5.0 = very high risk)
+    </ResponseField>
+    
+    <ResponseField name="timestamp" type="string">
+      Calculation timestamp in ISO 8601 format
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="count" type="integer">
+  Number of opportunities in the response
+</ResponseField>
+
+<ResponseField name="filters" type="object">
+  Applied filter parameters
+  
+  <Expandable title="filters object">
+    <ResponseField name="min_profit" type="number">
+      Applied minimum profit filter
+    </ResponseField>
+    
+    <ResponseField name="max_risk" type="number">
+      Applied maximum risk filter
+    </ResponseField>
+    
+    <ResponseField name="symbols" type="string[]">
+      Symbols included in the search
+    </ResponseField>
+    
+    <ResponseField name="exchanges" type="string[]">
+      Exchanges included in the search
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Funding Rate Mechanics
+
+<Note>
+  **How Funding Rates Work:**
+  
+  Perpetual futures contracts use funding rates to keep the futures price anchored to the spot price:
+  
+  - **Positive funding rate**: Long positions pay short positions (market is bullish)
+  - **Negative funding rate**: Short positions pay long positions (market is bearish)
+  - **Funding interval**: Typically every 8 hours (00:00, 08:00, 16:00 UTC)
+  
+  **Profit Calculation:**
+  
+  ```
+  net_funding_rate = short_funding_rate - long_funding_rate
+  daily_rate = net_funding_rate * 3 (three 8-hour periods)
+  APY = daily_rate * 365
+  ```
+  
+  By going long on the exchange with lower/negative funding and short on the exchange with higher/positive funding, you collect funding payments on both sides.
+</Note>
+
+## Risk Score Calculation
+
+The risk score (1.0-5.0) is calculated based on:
+
+- **Price correlation**: How closely the mark prices track each other
+- **Liquidity**: Available trading volume and order book depth
+- **Funding rate volatility**: Historical stability of the funding rate
+- **Price difference**: Larger spreads indicate higher execution risk
+
+<Warning>
+  Always use `max_risk` parameter to filter opportunities based on your risk tolerance:
+  
+  - `1.0 - 2.0`: Conservative (highly liquid, stable funding rates)
+  - `2.0 - 3.0`: Moderate (good liquidity, some volatility)
+  - `3.0 - 4.0`: Aggressive (lower liquidity, higher volatility)
+  - `4.0 - 5.0`: Very High Risk (illiquid, unstable rates)
+</Warning>
+
+## Example Request
+
+```bash
+curl -X GET "https://api.neuratrade.com/api/v1/futures/opportunities?min_profit=0.015&max_risk=2.5&limit=5" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## Example Response
+
+```json
+{
+  "opportunities": [
+    {
+      "symbol": "BTC/USDT:USDT",
+      "longExchange": "bybit",
+      "shortExchange": "binance",
+      "longFundingRate": -0.0002,
+      "shortFundingRate": 0.0008,
+      "netFundingRate": 0.001,
+      "estimatedProfit8h": 0.1,
+      "estimatedProfitDaily": 0.3,
+      "estimatedProfitPercentage": 0.1,
+      "longMarkPrice": 43250.50,
+      "shortMarkPrice": 43255.80,
+      "priceDifference": 5.30,
+      "priceDifferencePercentage": 0.012,
+      "riskScore": 2.1,
+      "timestamp": "2026-03-03T10:15:30Z"
+    }
+  ],
+  "count": 1,
+  "filters": {
+    "min_profit": 0.015,
+    "max_risk": 2.5,
+    "symbols": [
+      "BTC/USDT:USDT",
+      "ETH/USDT:USDT",
+      "BNB/USDT:USDT",
+      "ADA/USDT:USDT",
+      "SOL/USDT:USDT",
+      "DOT/USDT:USDT",
+      "MATIC/USDT:USDT",
+      "AVAX/USDT:USDT",
+      "LINK/USDT:USDT",
+      "UNI/USDT:USDT",
+      "XRP/USDT:USDT",
+      "DOGE/USDT:USDT"
+    ],
+    "exchanges": [
+      "binance",
+      "bybit",
+      "okx",
+      "bitget"
+    ]
+  }
+}
+```
+
+## Execution Considerations
+
+<Info>
+  **Before executing funding rate arbitrage:**
+  
+  1. **Check margin requirements**: Both exchanges require collateral for leveraged positions
+  2. **Monitor price divergence**: Large price differences may indicate execution risk
+  3. **Account for fees**: Include trading fees, funding fees, and potential liquidation costs
+  4. **Set position limits**: Don't over-leverage; maintain safe margin ratios
+  5. **Track funding rate changes**: Rates update every 8 hours and can reverse
+  6. **Plan exit strategy**: Know how to close both positions quickly if needed
+</Info>
+
+## Implementation Details
+
+The endpoint retrieves real-time funding rates from supported exchanges via the CCXT service and calculates arbitrage opportunities by:
+
+1. Fetching current funding rates for all specified symbols and exchanges
+2. Pairing exchanges with opposite funding rate positions
+3. Calculating net funding rate and estimated profits
+4. Filtering by minimum profit and maximum risk thresholds
+5. Sorting by profitability (highest to lowest)
+
+## Source Reference
+
+Implementation: `services/backend-api/internal/api/handlers/arbitrage.go:282-358`
+
+Funding rate calculation: `services/backend-api/internal/ccxt/types.go:335-490`

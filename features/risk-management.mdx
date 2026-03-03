@@ -1,0 +1,525 @@
+---
+title: 'Risk Management'
+description: 'Comprehensive risk primitives: daily loss caps, position limits, consecutive loss pause, max drawdown halt'
+icon: 'shield'
+---
+
+## Overview
+
+NeuraTrade implements **defense-in-depth risk management** with multiple layers of protection: daily loss caps, position size throttling, consecutive loss pause, max drawdown halt, and circuit breakers. These primitives work together to protect capital and prevent catastrophic losses.
+
+## Risk Primitives
+
+<CardGroup cols={2}>
+  <Card title="Daily Loss Cap" icon="calendar-xmark">
+    Halt trading when daily losses exceed configured threshold
+  </Card>
+  <Card title="Position Size Throttle" icon="gauge">
+    Progressively reduce position size after consecutive losses
+  </Card>
+  <Card title="Consecutive Loss Pause" icon="pause">
+    Pause trading after N consecutive losing trades
+  </Card>
+  <Card title="Max Drawdown Halt" icon="chart-line-down">
+    Emergency shutdown when portfolio drawdown exceeds limit
+  </Card>
+</CardGroup>
+
+## Daily Loss Cap
+
+The **DailyLossTracker** monitors cumulative daily losses and halts trading when the threshold is exceeded.
+
+### Implementation
+
+```go services/backend-api/internal/services/risk/daily_loss_tracker.go:21-91
+type DailyLossTracker struct {
+    redis  *redis.Client
+    config DailyLossCapConfig
+}
+
+type DailyLossCapConfig struct {
+    MaxDailyLoss decimal.Decimal  // Max loss allowed per day
+}
+
+func (d *DailyLossTracker) RecordLoss(
+    ctx context.Context,
+    userID string,
+    loss decimal.Decimal,
+) error {
+    key := fmt.Sprintf("risk:daily_loss:%s", userID)
+    
+    // Get current loss
+    currentLossStr, err := d.redis.Get(ctx, key).Result()
+    var currentLoss decimal.Decimal
+    if err == redis.Nil {
+        currentLoss = decimal.Zero
+    } else {
+        currentLoss, _ = decimal.NewFromString(currentLossStr)
+    }
+    
+    // Add new loss
+    newLoss := currentLoss.Add(loss)
+    
+    // Store with 24-hour TTL (resets daily)
+    return d.redis.Set(ctx, key, newLoss.String(), 24*time.Hour).Err()
+}
+
+func (d *DailyLossTracker) CheckLossLimit(
+    ctx context.Context,
+    userID string,
+) (bool, decimal.Decimal, error) {
+    currentLoss, err := d.GetCurrentLoss(ctx, userID)
+    if err != nil {
+        return false, decimal.Zero, err
+    }
+    
+    exceeded := currentLoss.GreaterThanOrEqual(d.config.MaxDailyLoss)
+    return exceeded, currentLoss, nil
+}
+```
+
+### Configuration
+
+```yaml
+risk:
+  daily_loss_cap:
+    max_daily_loss: 100.00  # $100 max daily loss
+```
+
+<Warning>
+**Loss Cap Enforcement**: When the daily loss cap is reached, all trading is halted until the next day (UTC midnight). Existing positions remain open.
+</Warning>
+
+### Redis Storage
+
+Daily loss is stored in Redis with a **24-hour TTL**, automatically resetting at midnight UTC:
+
+```
+Key:   risk:daily_loss:{userID}
+Value: 87.50
+TTL:   86400 seconds (24 hours)
+```
+
+## Position Size Throttle
+
+The **PositionSizeThrottle** progressively reduces position size after consecutive losses, implementing a "cool down" mechanism.
+
+### Throttle Mechanism
+
+<Steps>
+  <Step title="Record Loss">
+    After a losing trade, record the consecutive loss count.
+  </Step>
+  <Step title="Calculate Multiplier">
+    Multiplier = `reductionFactor ^ (consecutiveLosses - threshold + 1)`
+    
+    Example: With `reductionFactor=0.7` and `threshold=1`:
+    - 1 loss: 0.7x (70% of original size)
+    - 2 losses: 0.49x (49% of original size)
+    - 3 losses: 0.343x (34% of original size)
+  </Step>
+  <Step title="Apply Throttle">
+    Multiply requested position size by throttle multiplier.
+  </Step>
+  <Step title="Recovery">
+    On winning trade, increase multiplier by `recoveryFactor` (default 1.5x).
+  </Step>
+</Steps>
+
+### Implementation
+
+```go services/backend-api/internal/services/risk/position_size_throttle.go:88-112
+func (t *PositionSizeThrottle) RecordLoss(
+    ctx context.Context,
+    userID string,
+    consecutiveLosses int,
+) (decimal.Decimal, error) {
+    if consecutiveLosses < t.config.LossThreshold {
+        return decimal.NewFromInt(1), nil  // No throttle yet
+    }
+    
+    // Calculate reduction
+    effectiveLosses := consecutiveLosses - t.config.LossThreshold + 1
+    reductionFloat, _ := t.config.ReductionFactor.Float64()
+    newMultiplier := decimal.NewFromFloat(
+        math.Pow(reductionFloat, float64(effectiveLosses)),
+    )
+    
+    // Apply minimum cap
+    if newMultiplier.LessThan(t.config.MinPositionMultiplier) {
+        newMultiplier = t.config.MinPositionMultiplier
+    }
+    
+    // Store in Redis with 24-hour TTL
+    key := fmt.Sprintf("risk:position_throttle:%s", userID)
+    return newMultiplier, t.redis.Set(ctx, key, newMultiplier.String(), 24*time.Hour).Err()
+}
+```
+
+### Recovery Mechanism
+
+```go services/backend-api/internal/services/risk/position_size_throttle.go:114-145
+func (t *PositionSizeThrottle) RecordWin(
+    ctx context.Context,
+    userID string,
+) (decimal.Decimal, error) {
+    currentMultiplier, _ := t.GetThrottleMultiplier(ctx, userID)
+    
+    // Already at full size?
+    if currentMultiplier.GreaterThanOrEqual(decimal.NewFromInt(1)) {
+        return decimal.NewFromInt(1), nil
+    }
+    
+    // Increase by recovery factor
+    newMultiplier := currentMultiplier.Mul(t.config.RecoveryFactor)
+    
+    // Cap at 1.0 (full size)
+    if newMultiplier.GreaterThan(decimal.NewFromInt(1)) {
+        newMultiplier = decimal.NewFromInt(1)
+    }
+    
+    // Store updated multiplier
+    key := fmt.Sprintf("risk:position_throttle:%s", userID)
+    t.redis.Set(ctx, key, newMultiplier.String(), 24*time.Hour)
+    
+    // If fully recovered, delete key
+    if newMultiplier.GreaterThanOrEqual(decimal.NewFromInt(1)) {
+        t.redis.Del(ctx, key)
+    }
+    
+    return newMultiplier, nil
+}
+```
+
+### Configuration
+
+```go services/backend-api/internal/services/risk/position_size_throttle.go:19-34
+type PositionSizeThrottleConfig struct {
+    Enabled               bool            // Enable throttling
+    ReductionFactor       decimal.Decimal // Multiply by this on loss (0.7 = 70%)
+    MinPositionMultiplier decimal.Decimal // Minimum size cap (0.1 = 10%)
+    LossThreshold         int             // Start throttling after N losses
+    RecoveryFactor        decimal.Decimal // Multiply by this on win (1.5 = 150%)
+}
+
+func DefaultPositionSizeThrottleConfig() PositionSizeThrottleConfig {
+    return PositionSizeThrottleConfig{
+        Enabled:               true,
+        ReductionFactor:       decimal.NewFromFloat(0.7),   // 30% reduction per loss
+        MinPositionMultiplier: decimal.NewFromFloat(0.1),   // Max 90% reduction
+        LossThreshold:         1,                           // Throttle after 1 loss
+        RecoveryFactor:        decimal.NewFromFloat(1.5),   // 50% recovery per win
+    }
+}
+```
+
+<Info>
+**Exponential Decay**: Position size decreases exponentially with consecutive losses, forcing smaller positions during drawdowns.
+</Info>
+
+## Consecutive Loss Pause
+
+The **ConsecutiveLossTracker** monitors consecutive losing trades and pauses trading when the limit is exceeded.
+
+### Implementation
+
+```go services/backend-api/internal/services/risk/consecutive_loss_tracker.go
+type ConsecutiveLossTracker struct {
+    redis  *redis.Client
+    config ConsecutiveLossConfig
+}
+
+type ConsecutiveLossConfig struct {
+    MaxConsecutiveLosses int           // Pause after N losses
+    PauseDuration        time.Duration // How long to pause
+}
+
+func (c *ConsecutiveLossTracker) RecordLoss(
+    ctx context.Context,
+    userID string,
+) (int, bool, error) {
+    key := fmt.Sprintf("risk:consecutive_loss:%s", userID)
+    
+    // Increment consecutive loss counter
+    count, err := c.redis.Incr(ctx, key).Result()
+    if err != nil {
+        return 0, false, err
+    }
+    
+    // Set expiry if first loss
+    if count == 1 {
+        c.redis.Expire(ctx, key, 24*time.Hour)
+    }
+    
+    // Check if pause threshold exceeded
+    shouldPause := int(count) >= c.config.MaxConsecutiveLosses
+    
+    if shouldPause {
+        // Set pause flag
+        pauseKey := fmt.Sprintf("risk:pause:%s", userID)
+        c.redis.Set(ctx, pauseKey, "paused", c.config.PauseDuration)
+    }
+    
+    return int(count), shouldPause, nil
+}
+
+func (c *ConsecutiveLossTracker) RecordWin(
+    ctx context.Context,
+    userID string,
+) error {
+    // Reset consecutive loss counter on win
+    key := fmt.Sprintf("risk:consecutive_loss:%s", userID)
+    return c.redis.Del(ctx, key).Err()
+}
+```
+
+### Configuration
+
+```yaml
+risk:
+  consecutive_loss:
+    max_consecutive_losses: 3    # Pause after 3 losses
+    pause_duration: 1h           # Pause for 1 hour
+```
+
+<Warning>
+**Trading Pause**: When consecutive loss limit is hit, **all** trading is paused for the configured duration. The pause can be manually cleared by the operator.
+</Warning>
+
+## Max Drawdown Halt
+
+The **RiskManagerAgent** monitors portfolio drawdown and triggers an emergency halt when the threshold is exceeded.
+
+### Emergency Check
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:371-422
+func (a *RiskManagerAgent) CheckEmergencyConditions(
+    _ context.Context,
+    currentDrawdown float64,
+    dailyLoss decimal.Decimal,
+) (*RiskAssessment, error) {
+    isEmergency := false
+    
+    // Check max drawdown threshold
+    if currentDrawdown >= a.config.EmergencyThreshold {
+        assessment.Reasons = append(assessment.Reasons,
+            fmt.Sprintf("Drawdown %.2f%% exceeds emergency threshold %.2f%%",
+                currentDrawdown*100, a.config.EmergencyThreshold*100))
+        isEmergency = true
+    }
+    
+    // Check daily loss cap
+    if dailyLoss.GreaterThanOrEqual(a.config.MaxDailyLoss) {
+        assessment.Reasons = append(assessment.Reasons,
+            fmt.Sprintf("Daily loss %s exceeds maximum %s",
+                dailyLoss.String(), a.config.MaxDailyLoss.String()))
+        isEmergency = true
+    }
+    
+    if isEmergency {
+        assessment.Action = RiskActionEmergency
+        assessment.RiskLevel = RiskLevelExtreme
+        assessment.Recommendations = append(assessment.Recommendations,
+            "EMERGENCY: All positions should be closed immediately",
+            "Halt all trading activity",
+            "Review strategy before resuming")
+        a.metrics.IncrementEmergency()
+    }
+    
+    return assessment, nil
+}
+```
+
+### Configuration
+
+```go services/backend-api/internal/services/risk/risk_manager_agent.go:73-83
+type RiskManagerConfig struct {
+    MaxPortfolioRisk     float64         // Max % of portfolio at risk
+    MaxPositionRisk      float64         // Max % per position
+    MaxDailyLoss         decimal.Decimal // Max daily loss
+    MaxDrawdown          float64         // Max drawdown before warning
+    EmergencyThreshold   float64         // Drawdown for emergency halt
+    ConsecutiveLossLimit int             // Max consecutive losses
+    PositionSizeLimit    decimal.Decimal // Max position size
+}
+
+func DefaultRiskManagerConfig() RiskManagerConfig {
+    return RiskManagerConfig{
+        MaxPortfolioRisk:     0.1,                        // 10%
+        MaxPositionRisk:      0.02,                       // 2%
+        MaxDailyLoss:         decimal.NewFromFloat(100),  // $100
+        MaxDrawdown:          0.15,                       // 15% warning
+        EmergencyThreshold:   0.20,                       // 20% emergency halt
+        ConsecutiveLossLimit: 3,
+        PositionSizeLimit:    decimal.NewFromFloat(1000),
+    }
+}
+```
+
+<Warning>
+**Emergency Actions**:
+- **20% drawdown**: Emergency halt triggered
+- All trading stops immediately
+- Existing positions should be manually reviewed
+- Operator intervention required to resume
+</Warning>
+
+## Circuit Breakers
+
+Circuit breakers provide additional protection against rapid loss events:
+
+<Tabs>
+  <Tab title="Market Volatility">
+    Halt trading when volatility exceeds threshold (e.g., VIX > 40).
+  </Tab>
+  <Tab title="Rapid Drawdown">
+    Pause trading if drawdown increases >5% in 15 minutes.
+  </Tab>
+  <Tab title="Failed Orders">
+    Pause after N consecutive order failures (exchange issues).
+  </Tab>
+  <Tab title="API Failures">
+    Halt on repeated API timeouts or connection failures.
+  </Tab>
+</Tabs>
+
+## Risk Lock & Entry Gating
+
+When risk conditions are breached, the **Quest Engine** activates a **risk lock** that prevents new entries while allowing exits:
+
+```go services/backend-api/internal/services/quest_engine.go:880-887
+func (e *QuestEngine) shouldBlockQuestEntryByRiskLockLocked(quest *Quest) bool {
+    if quest == nil || !e.isRiskLockEnabledLocked() {
+        return false
+    }
+    
+    definitionID := quest.Metadata["definition_id"]
+    // Block new scalping entries while risk-lock is active
+    return definitionID == "scalping_execution"
+}
+```
+
+### Risk Lock Sources
+
+<CardGroup cols={3}>
+  <Card title="Manual Env" icon="hand">
+    `NEURATRADE_QUEST_FORCE_RISK_LOCK=true`
+  </Card>
+  <Card title="Portfolio Safety" icon="shield">
+    Triggered by drawdown or daily loss cap
+  </Card>
+  <Card title="Drawdown Threshold" icon="chart-line-down">
+    Triggered when max drawdown exceeded
+  </Card>
+</CardGroup>
+
+## Monitoring & Alerts
+
+### Telegram Notifications
+
+Risk events are delivered via Telegram:
+
+```typescript services/telegram-service/bot-handlers.ts
+// Risk event notification
+{
+  type: "risk_alert",
+  level: "emergency",
+  message: "⚠️ EMERGENCY: Daily loss cap reached ($100/$100)\n\nAll trading halted.",
+  actions: ["/doctor", "/status"]
+}
+```
+
+### Risk Metrics API
+
+```bash
+# Get current risk metrics
+GET /api/v1/risk/metrics?user_id={userID}
+
+# Response
+{
+  "daily_loss": {
+    "current": 87.50,
+    "limit": 100.00,
+    "remaining": 12.50,
+    "percentage": 87.5
+  },
+  "position_throttle": {
+    "multiplier": 0.49,
+    "is_throttled": true,
+    "consecutive_losses": 2
+  },
+  "consecutive_losses": {
+    "current": 2,
+    "limit": 3,
+    "is_paused": false
+  },
+  "drawdown": {
+    "current": 0.12,
+    "max": 0.15,
+    "emergency_threshold": 0.20
+  }
+}
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Set Conservative Limits" icon="shield">
+    Start with tight risk limits (2% max daily loss, 1% max position) and relax gradually.
+  </Card>
+  <Card title="Monitor Daily" icon="calendar">
+    Check risk metrics daily. Adjust limits if consistently hitting caps.
+  </Card>
+  <Card title="Test Recovery" icon="flask">
+    Simulate recovery scenarios in paper trading. Ensure throttle recovers properly after wins.
+  </Card>
+  <Card title="Review Emergency Halts" icon="siren">
+    After emergency halt, thoroughly review logs, positions, and strategy before resuming.
+  </Card>
+</CardGroup>
+
+## Configuration Example
+
+```yaml
+risk:
+  # Daily Loss Cap
+  daily_loss_cap:
+    max_daily_loss: 100.00  # $100 max per day
+  
+  # Position Size Throttle
+  position_throttle:
+    enabled: true
+    reduction_factor: 0.7         # 30% reduction per loss
+    min_position_multiplier: 0.1  # 10% minimum size
+    loss_threshold: 1             # Start after 1 loss
+    recovery_factor: 1.5          # 50% recovery per win
+  
+  # Consecutive Loss Pause
+  consecutive_loss:
+    max_consecutive_losses: 3  # Pause after 3 losses
+    pause_duration: 1h         # Pause for 1 hour
+  
+  # Risk Manager
+  manager:
+    max_portfolio_risk: 0.10      # 10% max portfolio risk
+    max_position_risk: 0.02       # 2% max position risk
+    max_daily_loss: 100.00        # $100 max daily loss
+    max_drawdown: 0.15            # 15% warning threshold
+    emergency_threshold: 0.20     # 20% emergency halt
+    consecutive_loss_limit: 3
+    position_size_limit: 1000.00  # $1000 max position
+```
+
+## Related Resources
+
+<CardGroup cols={3}>
+  <Card title="Autonomous Trading" href="/features/autonomous-trading" icon="robot">
+    Learn how risk locks gate quest execution
+  </Card>
+  <Card title="AI Agents" href="/features/ai-agents" icon="brain">
+    Understand how the Risk Manager agent evaluates trades
+  </Card>
+  <Card title="Telegram Bot" href="/features/telegram-bot" icon="paper-plane">
+    Receive risk alerts and check status via Telegram
+  </Card>
+</CardGroup>

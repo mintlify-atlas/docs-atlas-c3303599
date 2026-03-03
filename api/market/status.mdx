@@ -1,0 +1,194 @@
+---
+title: 'Worker Status'
+description: 'Monitor market data collection workers and service health'
+api: 'GET /api/v1/market/workers/status'
+---
+
+## Overview
+
+Retrieve the operational status of all market data collection workers managed by the CollectorService. This endpoint provides insights into which exchanges are actively being monitored, worker health, and last update times.
+
+## Endpoint
+
+```
+GET /api/v1/market/workers/status
+```
+
+## Response Schema
+
+<ResponseField name="workers" type="object" required>
+  Map of exchange names to their worker status information
+  
+  <Expandable title="Worker Status Details">
+    <ResponseField name="exchange" type="string">
+      The exchange identifier this worker is collecting from
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Current worker state: `running`, `stopped`, `error`
+    </ResponseField>
+    <ResponseField name="last_update" type="timestamp">
+      Timestamp of the most recent successful data collection
+    </ResponseField>
+    <ResponseField name="error_count" type="integer">
+      Number of errors encountered since last successful run
+    </ResponseField>
+    <ResponseField name="symbols_tracked" type="integer">
+      Number of trading pairs being monitored by this worker
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="timestamp" type="timestamp" required>
+  The timestamp when this status snapshot was generated
+</ResponseField>
+
+## Code Examples
+
+<CodeGroup>
+
+```bash cURL
+curl -X GET "https://api.neuratrade.io/api/v1/market/workers/status" \
+  -H "Content-Type: application/json"
+```
+
+```javascript JavaScript
+const response = await fetch(
+  'https://api.neuratrade.io/api/v1/market/workers/status'
+);
+const status = await response.json();
+
+// Check if all workers are running
+const allRunning = Object.values(status.workers).every(
+  worker => worker.status === 'running'
+);
+console.log(`All workers healthy: ${allRunning}`);
+```
+
+```python Python
+import requests
+from datetime import datetime, timedelta
+
+response = requests.get(
+    'https://api.neuratrade.io/api/v1/market/workers/status'
+)
+status = response.json()
+
+# Find stale workers (no update in 5 minutes)
+stale_threshold = datetime.utcnow() - timedelta(minutes=5)
+for exchange, worker in status['workers'].items():
+    last_update = datetime.fromisoformat(worker['last_update'].replace('Z', '+00:00'))
+    if last_update < stale_threshold:
+        print(f"⚠️ Stale worker: {exchange}")
+```
+
+</CodeGroup>
+
+## Response Example
+
+```json
+{
+  "workers": {
+    "binance": {
+      "exchange": "binance",
+      "status": "running",
+      "last_update": "2026-03-03T10:30:45Z",
+      "error_count": 0,
+      "symbols_tracked": 245
+    },
+    "coinbase": {
+      "exchange": "coinbase",
+      "status": "running",
+      "last_update": "2026-03-03T10:30:42Z",
+      "error_count": 0,
+      "symbols_tracked": 128
+    },
+    "kraken": {
+      "exchange": "kraken",
+      "status": "error",
+      "last_update": "2026-03-03T10:25:12Z",
+      "error_count": 3,
+      "symbols_tracked": 156
+    }
+  },
+  "timestamp": "2026-03-03T10:30:47Z"
+}
+```
+
+## Worker Status States
+
+### Running
+Worker is actively collecting market data and operating normally.
+
+### Stopped
+Worker has been intentionally stopped through admin controls or is waiting to start.
+
+### Error
+Worker encountered errors during data collection. Check `error_count` and logs for details.
+
+## Monitoring Recommendations
+
+<Info>
+  **Stale Data Detection**: If `last_update` is more than 2 minutes old for a running worker, investigate potential network or API issues.
+</Info>
+
+<Warning>
+  **High Error Counts**: Workers with `error_count > 5` may indicate exchange API rate limiting or connectivity problems.
+</Warning>
+
+## Related Endpoints
+
+### Exchange Worker Management
+
+For admin operations on collection workers:
+
+```
+POST /api/v1/exchanges/workers/:exchange/restart
+```
+
+Requires admin authentication. Restarts a specific collection worker.
+
+### Exchange Configuration
+
+```
+GET /api/v1/exchanges/config
+```
+
+Retrieve the current exchange configuration and active pairs.
+
+## Error Responses
+
+<ResponseExample>
+
+```json 500 Internal Server Error
+{
+  "error": "Collector service is not available",
+  "timestamp": "2026-03-03T10:30:47Z"
+}
+```
+
+</ResponseExample>
+
+## Implementation Details
+
+- **Service Dependency**: Requires CollectorService to be initialized
+- **Data Source**: In-memory worker state from CollectorService
+- **Update Frequency**: Worker status is updated in real-time as collections occur
+- **Source Code**: `services/backend-api/internal/api/handlers/market.go:685`
+
+## Use Cases
+
+- **Health Monitoring**: Integrate with alerting systems to detect worker failures
+- **Performance Tracking**: Monitor collection latency via `last_update` timestamps
+- **Capacity Planning**: Track `symbols_tracked` to understand data collection load
+- **Debugging**: Identify which exchanges are experiencing issues during incident response
+
+## Collection Service Architecture
+
+The market data collection system uses a worker-per-exchange model:
+
+1. **CollectorService** orchestrates all workers
+2. Each worker maintains persistent connections to exchange WebSocket/REST APIs
+3. Workers publish collected data to both database and Redis cache
+4. Circuit breakers protect against cascading failures from unhealthy exchanges
+
+For detailed collector service configuration, see the [Services Architecture](/architecture/services) documentation.

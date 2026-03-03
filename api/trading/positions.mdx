@@ -1,0 +1,192 @@
+---
+title: List Positions
+api: GET /api/v1/trading/positions
+description: Retrieve all trading positions with optional status filtering
+---
+
+List all tracked trading positions. Positions can be filtered by status and are returned in descending order by open time (most recent first).
+
+## Query Parameters
+
+<ParamField query="status" type="string" optional>
+  Filter positions by status. If omitted, returns all positions regardless of status.
+  
+  **Allowed values:**
+  - `OPEN` - Active positions currently held
+  - `CLOSED` - Positions that were manually closed or canceled
+  - `LIQUIDATED` - Positions that were liquidated
+</ParamField>
+
+## Response
+
+<ResponseField name="status" type="string">
+  Response status: `"success"` or `"error"`
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Container for position list data
+  
+  <Expandable title="data properties">
+    <ResponseField name="count" type="integer">
+      Total number of positions returned
+    </ResponseField>
+    
+    <ResponseField name="positions" type="array">
+      Array of position records
+      
+      <Expandable title="PositionRecord properties">
+        <ResponseField name="position_id" type="string">
+          Unique position identifier (format: `pos-YYYYMMDDHHMMSS-sequence`)
+        </ResponseField>
+        
+        <ResponseField name="order_id" type="string">
+          ID of the order that opened this position
+        </ResponseField>
+        
+        <ResponseField name="exchange" type="string">
+          Exchange where position is held
+        </ResponseField>
+        
+        <ResponseField name="symbol" type="string">
+          Trading pair symbol (e.g., `"BTC/USDT"`)
+        </ResponseField>
+        
+        <ResponseField name="side" type="string">
+          Position side: `BUY` (long) or `SELL` (short)
+        </ResponseField>
+        
+        <ResponseField name="size" type="string">
+          Position size as a decimal string
+        </ResponseField>
+        
+        <ResponseField name="entry_price" type="string">
+          Entry price as a decimal string
+        </ResponseField>
+        
+        <ResponseField name="status" type="string">
+          Position status: `OPEN`, `CLOSED`, or `LIQUIDATED`
+        </ResponseField>
+        
+        <ResponseField name="opened_at" type="string">
+          ISO 8601 timestamp when position was opened
+        </ResponseField>
+        
+        <ResponseField name="updated_at" type="string">
+          ISO 8601 timestamp when position was last updated
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Position Fields
+
+### Position ID
+Unique identifier for each position, generated when the position is created. Format: `pos-YYYYMMDDHHMMSS-sequence`
+
+### Symbol
+The trading pair for this position (e.g., `BTC/USDT`, `ETH/USDT`)
+
+### Side
+- `BUY`: Long position (profit when price increases)
+- `SELL`: Short position (profit when price decreases)
+
+### Entry Price
+The price at which the position was opened. For market orders, this reflects the executed price.
+
+### Current PnL
+
+<Note>
+  Real-time PnL calculation is not included in this endpoint. To calculate current unrealized PnL, fetch the current market price and compute:
+  
+  **Long positions**: `(current_price - entry_price) * size`
+  
+  **Short positions**: `(entry_price - current_price) * size`
+</Note>
+
+## Position Status States
+
+- **OPEN**: Position is currently active and held
+- **CLOSED**: Position was closed through order cancellation
+- **LIQUIDATED**: Position was forcibly closed via liquidation endpoint
+
+## Example Requests
+
+```bash All Positions
+curl -X GET https://api.neuratrade.com/api/v1/trading/positions \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+```bash Open Positions Only
+curl -X GET "https://api.neuratrade.com/api/v1/trading/positions?status=OPEN" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+```bash Liquidated Positions Only
+curl -X GET "https://api.neuratrade.com/api/v1/trading/positions?status=LIQUIDATED" \
+  -H "Authorization: Bearer YOUR_API_KEY"
+```
+
+## Example Response
+
+```json 200 Success
+{
+  "status": "success",
+  "data": {
+    "count": 3,
+    "positions": [
+      {
+        "position_id": "pos-20260303120000-3",
+        "order_id": "ord-20260303120000-3",
+        "exchange": "binance",
+        "symbol": "ETH/USDT",
+        "side": "BUY",
+        "size": "1.5",
+        "entry_price": "3000.00",
+        "status": "OPEN",
+        "opened_at": "2026-03-03T12:30:00Z",
+        "updated_at": "2026-03-03T12:30:00Z"
+      },
+      {
+        "position_id": "pos-20260303120000-2",
+        "order_id": "ord-20260303120000-2",
+        "exchange": "okx",
+        "symbol": "BTC/USDT",
+        "side": "SELL",
+        "size": "0.05",
+        "entry_price": "65000.00",
+        "status": "CLOSED",
+        "opened_at": "2026-03-03T12:15:00Z",
+        "updated_at": "2026-03-03T12:20:00Z"
+      },
+      {
+        "position_id": "pos-20260303120000-1",
+        "order_id": "ord-20260303120000-1",
+        "exchange": "binance",
+        "symbol": "BTC/USDT",
+        "side": "BUY",
+        "size": "0.01",
+        "entry_price": "50000.00",
+        "status": "LIQUIDATED",
+        "opened_at": "2026-03-03T12:00:00Z",
+        "updated_at": "2026-03-03T12:10:00Z"
+      }
+    ]
+  }
+}
+```
+
+```json 200 Empty Result
+{
+  "status": "success",
+  "data": {
+    "count": 0,
+    "positions": []
+  }
+}
+```
+
+## Related Endpoints
+
+- [Place Order](/api/trading/place-order) - Create a new position
+- [Liquidate Position](/api/trading/liquidate) - Close a position via liquidation

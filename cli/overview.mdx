@@ -1,0 +1,193 @@
+---
+title: CLI Overview
+description: NeuraTrade command-line interface for managing services and operations
+---
+
+The NeuraTrade CLI is a native command-line tool for managing all platform services, checking system health, and performing administrative tasks.
+
+## Installation
+
+The CLI binary is built with the project:
+
+```bash
+make build
+```
+
+The binary is located at:
+
+```
+./bin/neuratrade
+```
+
+## Runtime Home Directory
+
+NeuraTrade uses a home directory for configuration, logs, and runtime state:
+
+<Note>
+**Default Location:** `~/.neuratrade`
+
+Override with the `NEURATRADE_HOME` environment variable.
+</Note>
+
+### Directory Structure
+
+```
+~/.neuratrade/
+├── config.json          # Main configuration file
+├── logs/                # Service log files
+│   ├── backend.log
+│   ├── ccxt.log
+│   └── telegram.log
+├── pids/                # Process ID files
+│   ├── backend.pid
+│   ├── ccxt.pid
+│   ├── telegram.pid
+│   └── gateway-state.json
+└── data/                # Application data
+    └── neuratrade.db    # SQLite database
+```
+
+## Configuration File
+
+The `config.json` file stores all service configuration:
+
+```json
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "database": {
+    "sqlite_path": "~/.neuratrade/data/neuratrade.db"
+  },
+  "ccxt": {
+    "service_url": "http://localhost:3001",
+    "grpc_address": "localhost:50051",
+    "admin_api_key": "your-admin-key"
+  },
+  "telegram": {
+    "bot_token": "your-bot-token",
+    "chat_id": "your-chat-id"
+  },
+  "ai": {
+    "provider": "openai",
+    "api_key": "your-api-key",
+    "model": "gpt-4"
+  }
+}
+```
+
+<Warning>
+Configuration files may contain sensitive credentials. Ensure proper file permissions:
+
+```bash
+chmod 600 ~/.neuratrade/config.json
+```
+</Warning>
+
+## Environment Variables
+
+The CLI respects these environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `NEURATRADE_HOME` | Runtime home directory | `~/.neuratrade` |
+| `NEURATRADE_API_BASE_URL` | Backend API URL | `http://localhost:8080` |
+| `NEURATRADE_API_KEY` | API authentication key | From config |
+| `SERVER_PORT` | Backend server port | `8080` |
+| `CCXT_PORT` | CCXT service port | `3001` |
+| `TELEGRAM_PORT` | Telegram service port | `3002` |
+| `BIND_HOST` | Internal service bind address | `127.0.0.1` |
+| `ADMIN_API_KEY` | Admin API key | From config |
+| `JWT_SECRET` | JWT signing secret | Auto-generated |
+
+## PID Files
+
+Process ID files track running services:
+
+- **backend.pid** - Backend API server process ID
+- **ccxt.pid** - CCXT exchange service process ID  
+- **telegram.pid** - Telegram bot service process ID
+- **gateway-state.json** - Gateway runtime state and health status
+
+### Gateway State Format
+
+```json
+{
+  "mode": "healthy",
+  "supervised": false,
+  "updated_at": "2026-03-03T10:30:00Z",
+  "health_timeout_seconds": 90,
+  "services": {
+    "backend": {
+      "status": "healthy",
+      "endpoint": "http://127.0.0.1:8080/health"
+    },
+    "telegram": {
+      "status": "healthy",
+      "endpoint": "http://127.0.0.1:3002/health"
+    },
+    "ccxt": {
+      "status": "healthy",
+      "endpoint": "http://127.0.0.1:3001/health"
+    }
+  }
+}
+```
+
+## Log Files
+
+Service logs are written to:
+
+- `~/.neuratrade/logs/backend.log` - Backend API logs
+- `~/.neuratrade/logs/ccxt.log` - CCXT service logs
+- `~/.neuratrade/logs/telegram.log` - Telegram service logs
+
+<Note>
+Logs are append-only. Use log rotation tools in production deployments.
+</Note>
+
+## CLI Version
+
+Check the CLI version:
+
+```bash
+./bin/neuratrade --version
+```
+
+## Getting Help
+
+View available commands:
+
+```bash
+./bin/neuratrade --help
+```
+
+Get help for a specific command:
+
+```bash
+./bin/neuratrade gateway --help
+./bin/neuratrade status --help
+```
+
+## Quick Start
+
+1. **Initialize configuration:**
+   ```bash
+   ./bin/neuratrade config init
+   ```
+
+2. **Start services:**
+   ```bash
+   ./bin/neuratrade gateway start
+   ```
+
+3. **Check status:**
+   ```bash
+   ./bin/neuratrade gateway status
+   ```
+
+4. **Stop services:**
+   ```bash
+   ./bin/neuratrade gateway stop
+   ```

@@ -1,0 +1,156 @@
+---
+title: Cancel Order
+api: POST /api/v1/trading/cancel_order
+description: Cancel an open trading order
+---
+
+Cancel an open order by its order ID. This endpoint validates that the order exists and is in an `OPEN` state before cancellation. When an order is successfully canceled, the associated position is also closed.
+
+## Request Body
+
+<ParamField body="order_id" type="string" required>
+  Unique identifier of the order to cancel. Must match an existing order in `OPEN` status.
+  
+  Format: `ord-YYYYMMDDHHMMSS-sequence`
+  
+  Example: `"ord-20260303120000-1"`
+</ParamField>
+
+## Response
+
+<ResponseField name="status" type="string">
+  Response status: `"success"` or `"error"`
+</ResponseField>
+
+<ResponseField name="data" type="OrderRecord">
+  Updated order details after cancellation
+  
+  <Expandable title="OrderRecord properties">
+    <ResponseField name="order_id" type="string">
+      Unique order identifier
+    </ResponseField>
+    
+    <ResponseField name="position_id" type="string">
+      Associated position identifier
+    </ResponseField>
+    
+    <ResponseField name="exchange" type="string">
+      Exchange where order was placed
+    </ResponseField>
+    
+    <ResponseField name="symbol" type="string">
+      Trading pair symbol
+    </ResponseField>
+    
+    <ResponseField name="side" type="string">
+      Order side (`BUY` or `SELL`)
+    </ResponseField>
+    
+    <ResponseField name="type" type="string">
+      Order type (`MARKET` or `LIMIT`)
+    </ResponseField>
+    
+    <ResponseField name="amount" type="string">
+      Order amount (decimal string)
+    </ResponseField>
+    
+    <ResponseField name="price" type="string">
+      Order price (decimal string)
+    </ResponseField>
+    
+    <ResponseField name="status" type="string">
+      Order status - will be `CANCELED` after successful cancellation
+    </ResponseField>
+    
+    <ResponseField name="created_at" type="string">
+      ISO 8601 timestamp when order was created
+    </ResponseField>
+    
+    <ResponseField name="updated_at" type="string">
+      ISO 8601 timestamp when order was canceled
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+<ResponseField name="error" type="string">
+  Error message describing the failure reason
+</ResponseField>
+
+### Status Codes
+
+- **200 OK**: Order successfully canceled
+- **400 Bad Request**: Invalid request payload
+- **404 Not Found**: Order with specified ID does not exist
+- **409 Conflict**: Order is not in `OPEN` state (already canceled, filled, or closed)
+
+## Order State Validation
+
+The endpoint enforces strict state validation:
+
+1. **Order exists**: The `order_id` must match an existing order in the database
+2. **Order is open**: Only orders with status `OPEN` can be canceled
+3. **Position closure**: When an order is canceled, the associated position status is updated to `CLOSED`
+
+<Warning>
+  Orders that have already been filled, canceled, or closed cannot be canceled again. The endpoint will return a `409 Conflict` error with message `"order is not open"`.
+</Warning>
+
+## Example Request
+
+```bash
+curl -X POST https://api.neuratrade.com/api/v1/trading/cancel_order \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "order_id": "ord-20260303120000-1"
+  }'
+```
+
+## Example Responses
+
+```json 200 Success
+{
+  "status": "success",
+  "data": {
+    "order_id": "ord-20260303120000-1",
+    "position_id": "pos-20260303120000-1",
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "side": "BUY",
+    "type": "LIMIT",
+    "amount": "0.01",
+    "price": "50000.00",
+    "status": "CANCELED",
+    "created_at": "2026-03-03T12:00:00Z",
+    "updated_at": "2026-03-03T12:05:00Z"
+  }
+}
+```
+
+```json 404 Order Not Found
+{
+  "status": "error",
+  "error": "order not found"
+}
+```
+
+```json 409 Order Not Open
+{
+  "status": "error",
+  "error": "order is not open"
+}
+```
+
+```json 400 Invalid Payload
+{
+  "status": "error",
+  "error": "invalid request payload"
+}
+```
+
+## Related Endpoints
+
+- [Place Order](/api/trading/place-order) - Create a new order
+- [List Positions](/api/trading/positions) - View all positions and their associated orders
