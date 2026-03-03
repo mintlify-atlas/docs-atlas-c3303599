@@ -1,0 +1,185 @@
+{
+  "projectType": "saas",
+  "projectName": "NeuraTrade",
+  "projectDescription": "High-performance platform for real-time cryptocurrency arbitrage detection, technical analysis, and autonomous trading with AI-powered decision making.",
+  "theme": "aspen",
+  "primaryColor": "#0EA5E9",
+  "lightColor": "#38BDF8",
+  "darkColor": "#0284C7",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/arbitrage-detection",
+              "features/autonomous-trading",
+              "features/ai-agents",
+              "features/risk-management",
+              "features/telegram-bot"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/exchanges",
+              "configuration/ai-providers",
+              "configuration/risk-settings"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/native-deployment",
+              "guides/gateway-cli",
+              "guides/telegram-setup",
+              "guides/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Market Data",
+            "pages": [
+              "api/market/tickers",
+              "api/market/orderbook",
+              "api/market/status"
+            ]
+          },
+          {
+            "group": "Trading",
+            "pages": [
+              "api/trading/place-order",
+              "api/trading/cancel-order",
+              "api/trading/positions",
+              "api/trading/liquidate"
+            ]
+          },
+          {
+            "group": "Arbitrage",
+            "pages": [
+              "api/arbitrage/opportunities",
+              "api/arbitrage/futures",
+              "api/arbitrage/history"
+            ]
+          },
+          {
+            "group": "Analysis",
+            "pages": [
+              "api/analysis/signals",
+              "api/analysis/indicators"
+            ]
+          },
+          {
+            "group": "Autonomous Operations",
+            "pages": [
+              "api/autonomous/quests",
+              "api/autonomous/agents",
+              "api/autonomous/budget"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api/system/health",
+              "api/system/exchanges",
+              "api/system/cache"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI Reference",
+        "groups": [
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/overview",
+              "cli/gateway",
+              "cli/status",
+              "cli/exchanges",
+              "cli/ai-models"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Architecture",
+        "groups": [
+          {
+            "group": "System Design",
+            "pages": [
+              "architecture/overview",
+              "architecture/services",
+              "architecture/data-flow",
+              "architecture/quest-engine"
+            ]
+          },
+          {
+            "group": "AI System",
+            "pages": [
+              "architecture/ai/agents",
+              "architecture/ai/skills",
+              "architecture/ai/reasoning"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Real-time cryptocurrency arbitrage detection across spot and futures markets",
+    "AI-powered autonomous trading with multi-agent decision system",
+    "Advanced technical analysis with 50+ indicators",
+    "Quest-based autonomous operation scheduler with Redis coordination",
+    "Comprehensive risk management with daily loss limits and circuit breakers",
+    "Telegram bot for remote monitoring and control",
+    "Multi-exchange support via CCXT integration",
+    "Native CLI gateway for service orchestration",
+    "WebSocket market data streaming",
+    "Paper trading simulation and backtesting"
+  ],
+  "publicApiSurface": [
+    "GET /health - System health status",
+    "GET /ready - Readiness probe",
+    "GET /api/v1/market/tickers - Real-time ticker data",
+    "GET /api/v1/market/orderbook - Order book snapshots",
+    "GET /api/v1/arbitrage/opportunities - Spot arbitrage opportunities",
+    "GET /api/v1/futures/opportunities - Futures funding arbitrage",
+    "GET /api/v1/analysis/signals - Trading signals with indicators",
+    "POST /api/v1/trading/place_order - Execute trading order",
+    "POST /api/v1/trading/cancel_order - Cancel open order",
+    "GET /api/v1/trading/positions - List tracked positions",
+    "POST /api/v1/trading/liquidate - Close position",
+    "GET /api/v1/autonomous/quests - List autonomous quests",
+    "POST /api/v1/autonomous/quests - Create new quest",
+    "GET /api/v1/autonomous/budget - Budget status",
+    "GET /api/v1/exchanges - List configured exchanges",
+    "./bin/neuratrade gateway start - Start all services",
+    "./bin/neuratrade gateway stop - Stop all services",
+    "./bin/neuratrade gateway status - Check service status",
+    "./bin/neuratrade exchanges list - List available exchanges",
+    "./bin/neuratrade ai models - List AI models"
+  ]
+}
