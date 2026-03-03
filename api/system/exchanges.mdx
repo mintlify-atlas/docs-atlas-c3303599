@@ -132,19 +132,19 @@ curl http://localhost:3000/api/v1/exchanges/workers/status
 
 ### Response
 
-<ResponseField name="message" type="string">
-  Status message (implementation pending in collector service)
+<ResponseField name="error" type="string">
+  Error message if collector service unavailable
 </ResponseField>
 
-<Warning>
-This endpoint is a placeholder. Worker status tracking needs to be implemented in the collector service to return detailed worker metrics.
-</Warning>
+<Note>
+This endpoint returns worker status from the collector service when available. If the collector service is not initialized, it returns a 503 error.
+</Note>
 
 ### Example Response
 
 ```json
 {
-  "message": "Worker status endpoint - implementation needed in collector service"
+  "error": "Collector service not available"
 }
 ```
 
